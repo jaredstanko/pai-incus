@@ -1,0 +1,94 @@
+# PAI Incus Profile
+# Applied to the 'pai' container for controlled isolation with audio passthrough.
+#
+# This profile defines:
+#   - Resource limits (CPU, memory, disk)
+#   - Shared mount points (controlled — only specific directories)
+#   - Audio passthrough (PipeWire/PulseAudio socket)
+#   - Security settings (unprivileged, AppArmor, seccomp)
+
+config:
+  # Resource limits
+  limits.cpu: "4"
+  limits.memory: 4GB
+  limits.processes: "4096"
+
+  # Security — unprivileged container (default, but explicit)
+  security.privileged: "false"
+  security.nesting: "false"
+
+  # Allow running systemd as init
+  raw.lxc: |
+    lxc.init.cmd = /sbin/init
+
+  # Pass host user's UID for mount permissions
+  raw.idmap: both 1000 1000
+
+description: PAI sandbox container profile
+devices:
+  # Root disk with size limit
+  root:
+    path: /
+    pool: default
+    type: disk
+    size: 50GB
+
+  # Shared mount: PAI config (claude home)
+  claude-home:
+    type: disk
+    source: /home/USER_PLACEHOLDER/pai-workspace/claude-home
+    path: /home/claude/.claude
+
+  # Shared mount: data directory
+  data:
+    type: disk
+    source: /home/USER_PLACEHOLDER/pai-workspace/data
+    path: /home/claude/data
+
+  # Shared mount: exchange directory
+  exchange:
+    type: disk
+    source: /home/USER_PLACEHOLDER/pai-workspace/exchange
+    path: /home/claude/exchange
+
+  # Shared mount: portal directory
+  portal:
+    type: disk
+    source: /home/USER_PLACEHOLDER/pai-workspace/portal
+    path: /home/claude/portal
+
+  # Shared mount: work directory
+  work:
+    type: disk
+    source: /home/USER_PLACEHOLDER/pai-workspace/work
+    path: /home/claude/work
+
+  # Shared mount: upstream directory
+  upstream:
+    type: disk
+    source: /home/USER_PLACEHOLDER/pai-workspace/upstream
+    path: /home/claude/upstream
+
+  # Audio: PipeWire socket passthrough
+  pipewire:
+    type: disk
+    source: /run/user/HOST_UID_PLACEHOLDER/pipewire-0
+    path: /tmp/pipewire-0
+
+  # Audio: PulseAudio socket passthrough (fallback)
+  pulseaudio:
+    type: disk
+    source: /run/user/HOST_UID_PLACEHOLDER/pulse
+    path: /run/user/1000/pulse
+
+  # Port forward: PAI Companion portal
+  portal-proxy:
+    type: proxy
+    listen: tcp:0.0.0.0:8080
+    connect: tcp:127.0.0.1:8080
+
+  # Port forward: Notification server
+  notify-proxy:
+    type: proxy
+    listen: tcp:0.0.0.0:8888
+    connect: tcp:127.0.0.1:8888
