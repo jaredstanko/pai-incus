@@ -184,7 +184,12 @@ REPO
       sudo apt-get update -qq >> "$LOG_FILE" 2>&1
       sudo apt-get install -y -qq incus >> "$LOG_FILE" 2>&1
       ;;
-    fedora|rhel|centos)
+    fedora)
+      # Incus is in the official Fedora repos
+      sudo dnf install -y incus incus-client >> "$LOG_FILE" 2>&1
+      sudo systemctl enable --now incus >> "$LOG_FILE" 2>&1
+      ;;
+    rhel|centos)
       sudo dnf copr enable -y neil/incus >> "$LOG_FILE" 2>&1
       sudo dnf install -y incus >> "$LOG_FILE" 2>&1
       ;;
