@@ -78,14 +78,21 @@ Once you're signed in, paste this message into your PAI session:
 ```
 Install PAI Companion following ~/pai-companion/companion/INSTALL.md.
 Skip Docker (use Bun directly for the portal) and skip the voice
-module. Set both to start on boot.
+module. Keep ~/.vm-ip set to localhost and VM_IP=localhost in .env.
+After installation, verify the portal is running at localhost:8080
+and verify the voice server can successfully generate and play audio
+end-to-end (not just that the process is listening). Fix any
+macOS-specific binaries (like afplay) that won't work on Linux.
+Set both to start on boot.
 ```
 
-Wait for it to finish. Then open http://localhost:8080 in your browser to see the web portal.
+**Claude Code will ask you some questions. Each time press 2 (Yes) to allow it to edit settings for this session.**
+
+Wait for it to finish. This takes a few minutes.
 
 ### Step 5: You're Done
 
-From now on, just run `pai-talk` whenever you want to talk to your AI. Run `pai-talk --resume` to pick up a previous session.
+Open http://localhost:8080 in your browser to see the web portal. From now on, just run `pai-talk` whenever you want to talk to your AI. Run `pai-talk --resume` to pick up a previous session.
 
 ### Install options
 
