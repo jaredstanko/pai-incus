@@ -209,26 +209,36 @@ if ! incus version &>/dev/null 2>&1; then
   exec sg incus-admin -c "cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
 fi
 
-# Ensure host UID is in root's subuid/subgid range (required for raw.idmap)
-# Incus runs as root and needs permission to map the host user's UID into containers.
-if ! grep -q "^root:.*" /etc/subuid 2>/dev/null || \
-   ! awk -F: -v uid="$HOST_UID" '$1=="root" { split($0,a,":"); for(i=2;i<=NF;i+=2) { start=a[i]; count=a[i+1]; if(uid>=start && uid<start+count) found=1 } } END { exit !found }' /etc/subuid 2>/dev/null; then
-  # Simple check: see if host UID falls in root's ranges
-  NEEDS_SUBUID=true
-  while IFS=: read -r user start count; do
-    if [ "$user" = "root" ] && [ "$HOST_UID" -ge "$start" ] && [ "$HOST_UID" -lt $((start + count)) ]; then
-      NEEDS_SUBUID=false
-      break
-    fi
-  done < /etc/subuid
+# Ensure root has subordinate UID/GID ranges for unprivileged containers.
+# Ubuntu sets this up automatically; Fedora and others may not.
+SUBUID_CHANGED=false
 
-  if [ "$NEEDS_SUBUID" = true ]; then
-    echo "        Adding UID $HOST_UID to root's subordinate ID range..."
-    sudo sh -c "echo 'root:${HOST_UID}:1' >> /etc/subuid"
-    sudo sh -c "echo 'root:${HOST_UID}:1' >> /etc/subgid"
-    sudo systemctl restart incus >> "$LOG_FILE" 2>&1 || true
-    ok "Added UID $HOST_UID to root's subuid/subgid"
+# Root needs a large range for container user namespaces
+if ! grep -q "^root:" /etc/subuid 2>/dev/null; then
+  echo "        Adding subordinate UID/GID ranges for root..."
+  sudo sh -c 'echo "root:1000000:1000000000" >> /etc/subuid'
+  sudo sh -c 'echo "root:1000000:1000000000" >> /etc/subgid'
+  SUBUID_CHANGED=true
+fi
+
+# Host UID must also be in root's range (for raw.idmap passthrough)
+HAS_HOST_UID=false
+while IFS=: read -r user start count; do
+  if [ "$user" = "root" ] && [ "$HOST_UID" -ge "$start" ] && [ "$HOST_UID" -lt $((start + count)) ]; then
+    HAS_HOST_UID=true
+    break
   fi
+done < /etc/subuid 2>/dev/null
+
+if [ "$HAS_HOST_UID" = false ]; then
+  sudo sh -c "echo 'root:${HOST_UID}:1' >> /etc/subuid"
+  sudo sh -c "echo 'root:${HOST_UID}:1' >> /etc/subgid"
+  SUBUID_CHANGED=true
+fi
+
+if [ "$SUBUID_CHANGED" = true ]; then
+  sudo systemctl restart incus >> "$LOG_FILE" 2>&1 || true
+  ok "Configured subordinate UID/GID ranges"
 fi
 
 # Initialize Incus — ensure both storage pool and network exist
