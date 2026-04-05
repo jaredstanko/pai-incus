@@ -195,22 +195,18 @@ REPO
   ok "Incus installed"
 fi
 
-# Add user to incus-admin group if not already
-if ! groups "$HOST_USER" | grep -qw incus-admin; then
+# Add user to incus-admin group if not already a member
+if ! getent group incus-admin | grep -qw "$HOST_USER"; then
   echo "        Adding $HOST_USER to incus-admin group..."
   sudo usermod -aG incus-admin "$HOST_USER"
   ok "Added to incus-admin group"
-  echo ""
-  echo -e "        ${YELLOW}NOTE: Group membership requires a new login session.${NC}"
-  echo -e "        ${YELLOW}Run: newgrp incus-admin${NC}"
-  echo -e "        ${YELLOW}Then re-run: ./install.sh${NC}"
+fi
 
-  # Try to proceed with sg (runs command under the new group without a new login)
-  if ! incus version &>/dev/null 2>&1; then
-    echo "        Attempting to continue with new group membership..."
-    RERUN_ARGS=("$@")
-    exec sg incus-admin -c "cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
-  fi
+# Check if current shell actually has the group (may need sg even if user is a member)
+if ! incus version &>/dev/null 2>&1; then
+  echo "        Acquiring incus-admin group for this session..."
+  RERUN_ARGS=("$@")
+  exec sg incus-admin -c "cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
 fi
 
 # Ensure host UID is in root's subuid/subgid range (required for raw.idmap)
