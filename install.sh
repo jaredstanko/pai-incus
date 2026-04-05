@@ -263,9 +263,9 @@ if [ "$SUBUID_CHANGED" = true ]; then
 fi
 
 # Initialize Incus — ensure storage pool, managed network, and default profile are set up
-HAS_STORAGE=$(incus storage list --format csv 2>/dev/null | grep -c "^default,")
-HAS_NETWORK=$(incus network list --format csv 2>/dev/null | grep "^incusbr0," | grep -c ",YES,")
-HAS_PROFILE_ETH0=$(incus profile show default 2>/dev/null | grep -c "network: incusbr0")
+HAS_STORAGE=$(incus storage list --format csv 2>/dev/null | grep -c "^default," || true)
+HAS_NETWORK=$(incus network list --format csv 2>/dev/null | grep "^incusbr0," | grep -c ",YES," || true)
+HAS_PROFILE_ETH0=$(incus profile show default 2>/dev/null | grep -c "network: incusbr0" || true)
 
 if [ "$HAS_STORAGE" -gt 0 ] && [ "$HAS_NETWORK" -gt 0 ] && [ "$HAS_PROFILE_ETH0" -gt 0 ]; then
   skip "Incus already initialized"
