@@ -22,7 +22,7 @@ config:
     lxc.init.cmd = /sbin/init
 
   # Pass host user's UID for mount permissions
-  raw.idmap: both 1000 1000
+  raw.idmap: both HOST_UID_PLACEHOLDER 1000
 
 description: PAI sandbox container profile
 devices:
