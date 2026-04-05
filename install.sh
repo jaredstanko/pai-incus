@@ -388,6 +388,11 @@ if ! incus exec "$CONTAINER_NAME" -- id claude &>/dev/null 2>&1; then
   incus exec "$CONTAINER_NAME" -- usermod -aG sudo claude >> "$LOG_FILE" 2>&1
   # Ensure home directory ownership (may be wrong if pre-existing from image)
   incus exec "$CONTAINER_NAME" -- chown claude:claude /home/claude >> "$LOG_FILE" 2>&1
+  # Copy skel files if missing (useradd skips this when home already exists)
+  incus exec "$CONTAINER_NAME" -- bash -c 'for f in /etc/skel/.profile /etc/skel/.bashrc; do
+    target="/home/claude/$(basename "$f")"
+    [ ! -f "$target" ] && cp "$f" "$target" && chown claude:claude "$target"
+  done' >> "$LOG_FILE" 2>&1
   # Allow passwordless sudo for provisioning
   incus exec "$CONTAINER_NAME" -- bash -c 'echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude' >> "$LOG_FILE" 2>&1
   ok "User 'claude' created (UID 1000)"

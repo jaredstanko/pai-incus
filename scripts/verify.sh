@@ -159,9 +159,13 @@ else
   failed "Incus" "(incus not found)"
 fi
 
-# CLI commands
+# CLI commands (check both PATH and install location)
 for cmd in pai-start pai-stop pai-status pai-talk pai-shell; do
-  check_command "$cmd" "$cmd"
+  if command -v "$cmd" &>/dev/null || [ -x "$HOME/.local/bin/$cmd" ]; then
+    pinned "$cmd"
+  else
+    failed "$cmd" "($cmd not found)"
+  fi
 done
 
 # Workspace directories
