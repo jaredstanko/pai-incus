@@ -3,8 +3,8 @@
 # Run this INSIDE the Incus container as the 'claude' user.
 # Called automatically by install.sh on the host.
 #
-# Tools are installed at their latest versions. The container image is pinned
-# in versions.env. This script is idempotent — safe to re-run if interrupted.
+# Tools are installed at their latest versions. This script is idempotent —
+# safe to re-run if interrupted.
 #
 # Usage:
 #   bash ~/provision.sh
@@ -48,14 +48,12 @@ retry() {
   return 1
 }
 
-# --- Load version manifest ------------------------------------------------
-VERSIONS_FILE="$HOME/versions.env"
-if [ ! -f "$VERSIONS_FILE" ]; then
-  err "versions.env not found at $VERSIONS_FILE"
-  err "This file should be pushed by install.sh before running provision."
-  exit 1
-fi
-source "$VERSIONS_FILE"
+# --- Configuration --------------------------------------------------------
+# Tools install at latest versions. Only Node.js major version is pinned.
+NODE_MAJOR_VERSION="22"
+APT_PACKAGES="jq fzf ripgrep fd-find sqlite3 tmux bat ffmpeg curl wget imagemagick nmap whois dnsutils net-tools traceroute mtr texlive-latex-base texlive-fonts-recommended pandoc golang-go python3 python3-pip python3-venv build-essential git zip unzip tree htop kitty-terminfo ca-certificates gnupg espeak-ng"
+PAI_REPO="https://github.com/danielmiessler/PAI.git"
+PAI_COMPANION_REPO="https://github.com/chriscantey/pai-companion.git"
 
 # Use a safe TERM for installation — xterm-kitty can cause installers
 # to hang when run via incus exec (not a real kitty terminal).

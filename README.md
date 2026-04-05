@@ -116,7 +116,7 @@ This is a real security boundary, not just process isolation.
 
 ## Versions
 
-Tools (Bun, Claude Code, Playwright) install at their latest versions — matching the pai-lima approach. Only the Node.js major version (22 LTS) and container image (Ubuntu 24.04) are pinned. Configuration lives in `versions.env`. Run `./scripts/verify.sh` to check the full system state.
+Tools (Bun, Claude Code, Playwright) install at their latest versions — matching the pai-lima approach. Only the Node.js major version (22 LTS) and container image (Ubuntu 24.04) are pinned. Run `./scripts/verify.sh` to check the full system state.
 
 ## Parallel Instances
 

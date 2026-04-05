@@ -6,7 +6,6 @@
 #   - Container system packages
 #   - Shell environment (.bashrc/.zshrc PAI blocks)
 #   - Claude Code (migrates npm→native if needed, runs claude update)
-#   - Version manifest (re-pushes versions.env)
 #
 # What this does NOT touch:
 #   - Your data in ~/pai-workspace/
@@ -89,9 +88,6 @@ ok "Container running"
 # ─── Step 3: Update container tools and environment ───────────
 
 step "Updating container tools and environment..."
-
-# Push latest versions.env
-incus file push "$SCRIPT_DIR/../versions.env" "${CONTAINER_NAME}/home/claude/versions.env" 2>/dev/null
 
 # Re-run the environment block (idempotent), then update system packages
 pai_exec bash -c '

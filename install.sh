@@ -4,7 +4,7 @@
 # provisions it, and installs CLI commands.
 #
 # Tools are installed at their latest versions. The container image is pinned
-# in versions.env. This script is idempotent — safe to re-run if interrupted.
+# in this script. This script is idempotent — safe to re-run if interrupted.
 #
 # Usage:
 #   ./install.sh                        # Normal install (default "pai" instance)
@@ -85,15 +85,9 @@ retry() {
   return 1
 }
 
-# --- Load version manifest ------------------------------------------------
-
-VERSIONS_FILE="$SCRIPT_DIR/versions.env"
-if [ ! -f "$VERSIONS_FILE" ]; then
-  echo -e "${RED}✗${NC} versions.env not found in $SCRIPT_DIR"
-  echo -e "${YELLOW}→${NC} This file is required. Re-clone the repo or restore it."
-  exit 1
-fi
-source "$VERSIONS_FILE"
+# --- Configuration --------------------------------------------------------
+# Container image is pinned here. Tools install at latest versions.
+CONTAINER_IMAGE="images:ubuntu/24.04"
 
 # --- Banner ---------------------------------------------------------------
 
@@ -405,8 +399,7 @@ fi
 step "Provisioning sandbox (installs Claude Code, PAI, tools)..."
 echo "        This step takes 3-5 minutes on first run."
 
-# Push versions.env and provision script into container
-incus file push "$SCRIPT_DIR/versions.env" "${CONTAINER_NAME}/home/claude/versions.env" >> "$LOG_FILE" 2>&1
+# Push provision script into container
 incus file push "$SCRIPT_DIR/scripts/provision.sh" "${CONTAINER_NAME}/home/claude/provision.sh" >> "$LOG_FILE" 2>&1
 
 if [ "$VERBOSE" = true ]; then
