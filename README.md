@@ -2,6 +2,34 @@
 
 Run Claude Code + PAI in an isolated Incus container on native Linux. Same experience as [pai-lima](https://github.com/jaredstanko/pai-lima) (macOS), but using Incus system containers instead of Lima VMs.
 
+## How It Works
+
+```mermaid
+graph TB
+    subgraph host [Your Linux Machine]
+        terminal[Any terminal]
+        cli[pai-talk / pai-status / pai-shell]
+        workspace[~/pai-workspace/ Your files live here]
+        browser[Browser]
+        audio[PipeWire / PulseAudio]
+    end
+
+    subgraph container [Incus Container - Ubuntu 24.04]
+        claude[Claude Code AI assistant]
+        pai[PAI Skills and tools]
+        portal[Web Portal localhost:8080]
+        bun[Bun + Node.js + Playwright]
+    end
+
+    terminal -->|runs| cli
+    cli -->|connects to| claude
+    claude -->|reads/writes| workspace
+    browser -->|localhost:8080| portal
+    container -->|audio passthrough| audio
+```
+
+**The key idea:** Your AI runs in a sandboxed Incus container (unprivileged, AppArmor, seccomp). Your files stay on your host in `~/pai-workspace/`. The AI can read and write to those shared directories, but it can't touch anything else on your machine.
+
 ## Why Incus?
 
 | Feature | Incus | Docker | systemd-nspawn |
