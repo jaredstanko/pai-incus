@@ -40,7 +40,16 @@ graph TB
 | Audio passthrough | Declarative proxy | Manual mounts | Manual mounts |
 | Dependencies | One package | One package | Built-in |
 
+## What You Need
+
+- Linux (Ubuntu 22.04+, Debian 12+, or Fedora 38+)
+- x86_64 or aarch64
+- An [Anthropic account](https://console.anthropic.com/) (free to create)
+- About 10 minutes for the first install
+
 ## Quick Start
+
+### Step 1: Install
 
 ```bash
 git clone https://github.com/jaredstanko/pai-linux.git
@@ -48,12 +57,35 @@ cd pai-linux
 ./install.sh
 ```
 
-That's it. The installer:
-1. Installs Incus from Zabbly stable repo
-2. Creates an unprivileged Ubuntu 24.04 container
-3. Provisions it with Claude Code, PAI, Bun, Playwright
-4. Installs CLI commands to `~/.local/bin/`
-5. Sets up shared directories at `~/pai-workspace/`
+The installer will download and set up everything automatically. You'll see a lot of output scrolling by -- **ignore it all** until you see the final instructions.
+
+### Step 2: Open a PAI Session
+
+```bash
+pai-talk
+```
+
+### Step 3: Sign In
+
+Claude Code will ask you to sign in. It opens a browser -- log in with your Anthropic account. A free account works.
+
+When it asks "Do you trust /home/claude/.claude?" say **yes**.
+
+### Step 4: Set Up the Web Portal
+
+Once you're signed in, paste this message into your PAI session:
+
+```
+Install PAI Companion following ~/pai-companion/companion/INSTALL.md.
+Skip Docker (use Bun directly for the portal) and skip the voice
+module. Set both to start on boot.
+```
+
+Wait for it to finish. Then open http://localhost:8080 in your browser to see the web portal.
+
+### Step 5: You're Done
+
+From now on, just run `pai-talk` whenever you want to talk to your AI. Run `pai-talk --resume` to pick up a previous session.
 
 ### Install options
 
@@ -105,14 +137,6 @@ The container runs **unprivileged** with:
 - **Resource limits** — 4 CPU, 4GB RAM, 50GB disk
 
 This is a real security boundary, not just process isolation.
-
-## Requirements
-
-- Linux (Ubuntu 22.04+, Debian 12+, or Fedora 38+)
-- x86_64 or aarch64
-- systemd
-- Internet connection
-- sudo access (for initial Incus install only)
 
 ## Versions
 
