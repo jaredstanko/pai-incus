@@ -206,7 +206,8 @@ fi
 if ! incus version &>/dev/null 2>&1; then
   echo "        Acquiring incus-admin group for this session..."
   RERUN_ARGS=("$@")
-  exec sg incus-admin -c "cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
+  sg incus-admin -c "cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
+  exit $?
 fi
 
 # Ensure root has subordinate UID/GID ranges for unprivileged containers.
