@@ -274,12 +274,14 @@ else
     fi
 
     # Managed network bridge — create if missing, find a free subnet
-    # (An unmanaged bridge with the same name may exist as a stale Linux interface)
+    # (An unmanaged bridge or stale dnsmasq may exist from a previous install)
     if [ "$HAS_NETWORK" -eq 0 ]; then
-      # Clean up stale unmanaged bridge if present
+      # Clean up stale bridge interface and dnsmasq from previous installs
       if ip link show incusbr0 &>/dev/null 2>&1; then
         sudo ip link delete incusbr0 >> "$LOG_FILE" 2>&1 || true
       fi
+      # Kill stale dnsmasq that may hold the address
+      sudo pkill -f "dnsmasq.*incusbr0" >> "$LOG_FILE" 2>&1 || true
       echo "        Creating network bridge..."
       for OCTET in 200 201 202 203 204; do
         CANDIDATE="10.${OCTET}.0.1/24"
