@@ -266,14 +266,14 @@ alias pai='\''bun $HOME/.claude/PAI/Tools/pai.ts'\''
 # --- end PAI environment ---
 '
 
-for rcfile in ~/.bashrc ~/.zshrc; do
+for rcfile in ~/.bashrc ~/.zshrc ~/.profile; do
   touch "$rcfile"
   if grep -qF "$SENTINEL" "$rcfile" 2>/dev/null; then
     sed -i "/$SENTINEL/,/# --- end PAI environment ---/d" "$rcfile"
   fi
   echo "$ENV_BLOCK" >> "$rcfile"
 done
-log "PAI environment block written to .bashrc and .zshrc"
+log "PAI environment block written to .bashrc, .zshrc, and .profile"
 
 # Configure npm global prefix
 mkdir -p "$HOME/.npm-global"
