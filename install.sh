@@ -250,17 +250,14 @@ if [ "$SUBUID_CHANGED" = true ]; then
   ok "Configured subordinate UID/GID ranges"
 fi
 
-# Initialize Incus — ensure both storage pool and network exist
-INCUS_NEEDS_INIT=false
+# Initialize Incus — ensure storage pool, managed network, and default profile are set up
+HAS_STORAGE=$(incus storage list --format csv 2>/dev/null | grep -c "^default,")
+HAS_NETWORK=$(incus network list --format csv 2>/dev/null | grep "^incusbr0," | grep -c ",YES,")
+HAS_PROFILE_ETH0=$(incus profile show default 2>/dev/null | grep -c "network: incusbr0")
 
-if ! incus storage list 2>/dev/null | grep -q "default"; then
-  INCUS_NEEDS_INIT=true
-fi
-if ! incus network list 2>/dev/null | grep -q "incusbr0"; then
-  INCUS_NEEDS_INIT=true
-fi
-
-if [ "$INCUS_NEEDS_INIT" = true ]; then
+if [ "$HAS_STORAGE" -gt 0 ] && [ "$HAS_NETWORK" -gt 0 ] && [ "$HAS_PROFILE_ETH0" -gt 0 ]; then
+  skip "Incus already initialized"
+else
   echo "        Initializing Incus..."
 
   # Try auto-init first (works on most systems)
@@ -271,14 +268,19 @@ if [ "$INCUS_NEEDS_INIT" = true ]; then
     # Create missing pieces individually.
 
     # Storage pool — create if missing
-    if ! incus storage list 2>/dev/null | grep -q "default"; then
+    if [ "$HAS_STORAGE" -eq 0 ]; then
       echo "        Creating default storage pool..."
       incus storage create default dir >> "$LOG_FILE" 2>&1
     fi
 
-    # Network bridge — create if missing, find a free subnet
-    if ! incus network list 2>/dev/null | grep -q "incusbr0"; then
-      echo "        Creating network bridge (auto-init subnet conflict)..."
+    # Managed network bridge — create if missing, find a free subnet
+    # (An unmanaged bridge with the same name may exist as a stale Linux interface)
+    if [ "$HAS_NETWORK" -eq 0 ]; then
+      # Clean up stale unmanaged bridge if present
+      if ip link show incusbr0 &>/dev/null 2>&1; then
+        sudo ip link delete incusbr0 >> "$LOG_FILE" 2>&1 || true
+      fi
+      echo "        Creating network bridge..."
       for OCTET in 200 201 202 203 204; do
         CANDIDATE="10.${OCTET}.0.1/24"
         if ! ip route show | grep -q "10.${OCTET}.0."; then
@@ -290,13 +292,13 @@ if [ "$INCUS_NEEDS_INIT" = true ]; then
     fi
 
     # Ensure default profile has the network and storage
-    incus profile device add default eth0 nic network=incusbr0 >> "$LOG_FILE" 2>&1 || true
+    if [ "$HAS_PROFILE_ETH0" -eq 0 ]; then
+      incus profile device add default eth0 nic network=incusbr0 >> "$LOG_FILE" 2>&1 || true
+    fi
     incus profile device add default root disk path=/ pool=default >> "$LOG_FILE" 2>&1 || true
 
     ok "Incus initialized (manual config)"
   fi
-else
-  skip "Incus already initialized"
 fi
 
 # --- Step 3: Create shared workspace directories -------------------------
