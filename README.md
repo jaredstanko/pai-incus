@@ -1,49 +1,35 @@
-# PAI Linux — Sandboxed AI Workspace for Linux
+# PAI Linux — Your Own AI Assistant on Linux
 
-Run Claude Code + PAI in an isolated Incus container on native Linux. Same experience as [pai-lima](https://github.com/jaredstanko/pai-lima) (macOS), but using Incus system containers instead of Lima VMs.
+A sandboxed AI workspace running Claude Code on your Linux machine. One command to install, one command to start talking to your AI.
 
 ## How It Works
 
 ```mermaid
 graph TB
     subgraph host [Your Linux Machine]
-        terminal[Any terminal]
-        cli[pai-talk / pai-status / pai-shell]
+        terminal[Your terminal]
+        cli[pai-talk]
         workspace[~/pai-workspace/ Your files live here]
-        browser[Browser]
-        audio[PipeWire / PulseAudio]
+        browser[Your browser]
     end
 
-    subgraph container [Incus Container - Ubuntu 24.04]
+    subgraph container [Sandbox - isolated from your system]
         claude[Claude Code AI assistant]
         pai[PAI Skills and tools]
         portal[Web Portal localhost:8080]
-        bun[Bun + Node.js + Playwright]
     end
 
     terminal -->|runs| cli
     cli -->|connects to| claude
     claude -->|reads/writes| workspace
     browser -->|localhost:8080| portal
-    container -->|audio passthrough| audio
 ```
 
-**The key idea:** Your AI runs in a sandboxed Incus container (unprivileged, AppArmor, seccomp). Your files stay on your host in `~/pai-workspace/`. The AI can read and write to those shared directories, but it can't touch anything else on your machine.
-
-## Why Incus?
-
-| Feature | Incus | Docker | systemd-nspawn |
-|---------|-------|--------|----------------|
-| Isolation defaults | Strong (unprivileged + AppArmor + seccomp) | Weak ($1 escape) | Weak without hardening |
-| systemd as PID 1 | Native | Fights it | Native |
-| Snapshots/rollback | Built-in | None | Manual (btrfs only) |
-| Audio passthrough | Declarative proxy | Manual mounts | Manual mounts |
-| Dependencies | One package | One package | Built-in |
+**The key idea:** Your AI runs inside a sandbox (a mini computer inside your computer). It can read and write files in `~/pai-workspace/`, but it can't touch anything else on your machine. You can destroy and recreate the sandbox without losing your files.
 
 ## What You Need
 
 - Linux (Ubuntu 22.04+, Debian 12+, or Fedora 38+)
-- x86_64 or aarch64
 - An [Anthropic account](https://console.anthropic.com/) (free to create)
 - About 10 minutes for the first install
 
@@ -51,15 +37,23 @@ graph TB
 
 ### Step 1: Install
 
+Open your terminal and run these three commands:
+
 ```bash
 git clone https://github.com/jaredstanko/pai-linux.git
 cd pai-linux
 ./install.sh
 ```
 
+> **Don't have git?** On Fedora run `sudo dnf install git-core` first. On Ubuntu/Debian run `sudo apt install git` first.
+
 The installer will download and set up everything automatically. You'll see a lot of output scrolling by -- **ignore it all** until you see the final instructions.
 
+> **"Group membership" message?** If the installer says to log out and back in, do that, then come back to the `pai-linux` folder and run `./install.sh` again. It will pick up where it left off.
+
 ### Step 2: Open a PAI Session
+
+Open a **new terminal window** (important -- the new commands won't work in the same terminal you installed from), then run:
 
 ```bash
 pai-talk
@@ -92,9 +86,66 @@ Wait for it to finish. This takes a few minutes.
 
 ### Step 5: You're Done
 
-Open http://localhost:8080 in your browser to see the web portal. From now on, just run `pai-talk` whenever you want to talk to your AI. Run `pai-talk --resume` to pick up a previous session.
+Open http://localhost:8080 in your browser to see the web portal. From now on, just run `pai-talk` whenever you want to talk to your AI.
 
-### Install options
+---
+
+## What You Get
+
+- **Sandboxed AI** -- Claude Code runs inside an isolated container, not directly on your system
+- **Web portal** -- a local website for viewing AI-created content and exchanging files
+- **Session resume** -- pick up previous conversations where you left off
+- **Shared folders** -- `~/pai-workspace/` on your machine is shared with the AI
+- **Audio** -- the AI can speak through your speakers (if PipeWire or PulseAudio is running)
+
+## Commands
+
+| Command | What it does |
+|---------|-------------|
+| `pai-talk` | Talk to your AI |
+| `pai-talk --resume` | Pick up a previous conversation |
+| `pai-start` | Start the sandbox (it auto-starts when you run pai-talk) |
+| `pai-stop` | Stop the sandbox to free up resources |
+| `pai-status` | Check if everything is running and healthy |
+| `pai-shell` | Open a plain terminal inside the sandbox (no AI) |
+
+## Shared Files
+
+Your files live on your machine in `~/pai-workspace/`. The AI can see them too:
+
+```
+~/pai-workspace/
+  exchange/    Drop files here -- the AI can read them
+  work/        AI projects and output
+  data/        Datasets and databases
+  portal/      Web portal content
+  claude-home/ AI settings, memory, sessions
+  upstream/    Reference repos
+```
+
+Your data stays on your machine. You can destroy and recreate the sandbox without losing anything.
+
+## Troubleshooting
+
+**Install fails partway through** -- Just run `./install.sh` again. It's safe to re-run and will pick up where it left off.
+
+**"pai-talk" not found** -- Open a new terminal window, or run `source ~/.bashrc` first.
+
+**"Group membership" error** -- Log out of your computer and log back in, then run `./install.sh` again.
+
+**Web portal not loading** -- Make sure the sandbox is running (`pai-status`), then try http://localhost:8080.
+
+**No audio** -- Make sure PipeWire or PulseAudio is running on your system. Most desktop Linux installs have this by default.
+
+**Something else broke** -- Run `./scripts/verify.sh` to see what's working and what's not. If you're stuck, [open an issue](https://github.com/jaredstanko/pai-linux/issues).
+
+---
+
+## Advanced
+
+Everything below is for power users who want to customize or troubleshoot in depth.
+
+### Install Options
 
 ```bash
 ./install.sh                        # Normal install
@@ -103,53 +154,7 @@ Open http://localhost:8080 in your browser to see the web portal. From now on, j
 ./install.sh --name=v2 --port=8082  # Parallel install with a specific portal port
 ```
 
-## CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `pai-start` | Start the sandbox container |
-| `pai-stop` | Stop the sandbox container |
-| `pai-status` | Show health, versions, and resource usage |
-| `pai-talk` | Launch an interactive PAI session (Claude Code) |
-| `pai-talk --resume` | Resume a previous session |
-| `pai-talk --claude` | Run plain Claude Code (no PAI) |
-| `pai-shell` | Open a shell inside the sandbox |
-
-All CLI commands accept `--name=X` to target a named instance (e.g., `pai-talk --name=v2`).
-
-## Shared Directories
-
-Files in `~/pai-workspace/` are accessible from both host and container:
-
-| Host Path | Container Path | Purpose |
-|-----------|---------------|---------|
-| `~/pai-workspace/claude-home` | `/home/claude/.claude` | PAI config and state |
-| `~/pai-workspace/data` | `/home/claude/data` | Persistent data |
-| `~/pai-workspace/exchange` | `/home/claude/exchange` | File exchange with host |
-| `~/pai-workspace/portal` | `/home/claude/portal` | Web portal files |
-| `~/pai-workspace/work` | `/home/claude/work` | Working directory |
-| `~/pai-workspace/upstream` | `/home/claude/upstream` | Upstream repos |
-
-## Audio
-
-Audio passthrough uses your host's PipeWire or PulseAudio socket, mounted into the container. ElevenLabs voice output works without VirtIO or virtual sound devices.
-
-## Security Model
-
-The container runs **unprivileged** with:
-- **User namespaces** — container root is not host root
-- **AppArmor** — auto-generated per-container profile
-- **Seccomp** — allowlist of ~300 safe syscalls
-- **Controlled mounts** — only 6 specific directories shared
-- **Resource limits** — 4 CPU, 4GB RAM, 50GB disk
-
-This is a real security boundary, not just process isolation.
-
-## Versions
-
-Tools (Bun, Claude Code, Playwright) install at their latest versions — matching the pai-lima approach. Only the Node.js major version (22 LTS) and container image (Ubuntu 24.04) are pinned. Run `./scripts/verify.sh` to check the full system state.
-
-## Parallel Instances
+### Parallel Instances
 
 Use `--name` to run multiple instances side by side. Each gets its own container, workspace, and profile:
 
@@ -164,7 +169,7 @@ Use `--name` to run multiple instances side by side. Each gets its own container
 #   Portal:    http://localhost:8081 (default for named instances)
 ```
 
-All scripts accept `--name` to target a specific instance:
+All commands accept `--name` to target a specific instance:
 
 ```bash
 pai-talk --name=v2
@@ -174,64 +179,55 @@ pai-status --name=v2
 ./scripts/backup-restore.sh backup --name=v2
 ```
 
-The default instance (no `--name`) is unaffected.
-
-## Upgrading
+### Upgrading
 
 ```bash
 cd pai-linux
 git pull
 ./scripts/upgrade.sh
-./scripts/upgrade.sh --name=v2   # Upgrade a named instance
 ```
 
-What gets updated:
-- Container system packages
-- Shell environment (`.bashrc`/`.zshrc` PAI blocks)
-- Claude Code (migrates npm→native if needed)
-- CLI commands
+Your workspace, authentication, and sessions are preserved.
 
-What is preserved:
-- All files in `~/pai-workspace/`
-- Claude Code authentication and sessions
-- PAI configuration (`~/.claude/` inside the container)
-
-## Backup & Restore
+### Backup & Restore
 
 ```bash
-./scripts/backup-restore.sh backup              # Back up default instance
-./scripts/backup-restore.sh backup --name=v2    # Back up a named instance
-./scripts/backup-restore.sh restore             # Restore from a backup
+./scripts/backup-restore.sh backup     # Back up the sandbox + workspace
+./scripts/backup-restore.sh restore    # Restore from a backup
 ```
 
-Backup creates an Incus snapshot (atomic, fast) and copies your workspace directory. Restore lets you pick a snapshot and optionally restore the workspace.
-
-## Uninstall
+### Uninstall
 
 ```bash
-./scripts/uninstall.sh              # Remove default instance
-./scripts/uninstall.sh --name=v2    # Remove a named instance
+./scripts/uninstall.sh
 ```
 
-Removes the container, Incus profile, and CLI commands. Asks before touching workspace data. Does not remove Incus itself.
+Removes the sandbox, CLI commands, and Incus profile. Asks before deleting workspace data. Does not remove Incus itself.
 
-## Troubleshooting
+### Versions
 
-**Install fails at "Creating sandbox container"** — Run `incus delete pai --force` and re-run `./install.sh`. For named instances, use `incus delete pai-NAME --force`.
+Tools (Bun, Claude Code, Playwright) install at their latest versions. Only the Node.js major version (22 LTS) and container image (Ubuntu 24.04) are pinned. Run `./scripts/verify.sh` to check the full system state.
 
-**Container won't start** — Check `incus info pai` for status. If it shows an error, try `incus delete pai --force` and re-run `./install.sh`.
+### Security Model
 
-**No audio** — Ensure PipeWire or PulseAudio is running on the host. Check sockets: `ls /run/user/$(id -u)/pipewire-0 /run/user/$(id -u)/pulse/native`.
+The container runs **unprivileged** with:
+- **User namespaces** -- container root is not host root
+- **AppArmor** -- auto-generated per-container profile
+- **Seccomp** -- allowlist of ~300 safe syscalls
+- **Controlled mounts** -- only 6 specific directories shared
+- **Resource limits** -- 4 CPU, 4GB RAM, 50GB disk
 
-**Shared folders not visible** — Run `mkdir -p ~/pai-workspace/{claude-home,data,exchange,portal,upstream,work}` and restart the container.
+### Why Incus?
 
-**Permission denied on shared mounts** — Check that your host UID matches the container mapping: `incus config get pai raw.idmap`. Should show `both 1000 1000`.
+| Feature | Incus | Docker | systemd-nspawn |
+|---------|-------|--------|----------------|
+| Isolation defaults | Strong (unprivileged + AppArmor + seccomp) | Weak | Weak without hardening |
+| systemd as PID 1 | Native | Fights it | Native |
+| Snapshots/rollback | Built-in | None | Manual (btrfs only) |
+| Audio passthrough | Declarative proxy | Manual mounts | Manual mounts |
+| Dependencies | One package | One package | Built-in |
 
-**Port conflict with named instance** — Use `--port=N` to pick a specific port: `./install.sh --name=v2 --port=8082`.
-
-**Group membership error** — After installing Incus, you may need to log out and back in (or run `newgrp incus-admin`) for group membership to take effect.
-
-## Comparison with pai-lima (macOS)
+### Comparison with pai-lima (macOS)
 
 | | pai-lima (macOS) | pai-linux |
 |---|---|---|
@@ -239,5 +235,4 @@ Removes the container, Incus profile, and CLI commands. Asks before touching wor
 | Audio | VirtIO sound device | PipeWire socket passthrough |
 | Terminal | kitty (bundled) | Any terminal |
 | Status UI | Swift menu bar app | CLI (`pai-status`) |
-| Install | `brew install lima kitty` + VM provision | `apt install incus` + container provision |
 | Architecture | macOS + Apple Silicon only | Linux x86_64 + aarch64 |
