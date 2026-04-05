@@ -324,11 +324,22 @@ else
 
     # Storage pool — create if missing (--auto may have created one as btrfs/zfs)
     if ! incus storage list --format csv 2>/dev/null | grep -q "^default,"; then
-      # --auto may have created the directory before failing on network.
-      # Remove the empty leftover so "storage create" doesn't complain.
+      # --auto may have created the directory (or btrfs subvolume) before failing
+      # on network. Remove the leftover so "storage create" doesn't complain.
       POOL_DIR="/var/lib/incus/storage-pools/default"
       if [ -d "$POOL_DIR" ]; then
-        sudo rm -rf "$POOL_DIR" >> "$LOG_FILE" 2>&1 || true
+        # On btrfs roots, --auto creates subvolumes with read-only snapshots.
+        # Delete child subvolumes first, then the pool subvolume itself.
+        if command -v btrfs &>/dev/null && sudo btrfs subvolume show "$POOL_DIR" &>/dev/null; then
+          sudo btrfs subvolume list -o "$POOL_DIR" 2>/dev/null \
+            | awk '{print $NF}' | sort -r | while read -r sv; do
+              sudo btrfs property set "/$sv" ro false 2>/dev/null || true
+              sudo btrfs subvolume delete "/$sv" >> "$LOG_FILE" 2>&1 || true
+            done
+          sudo btrfs subvolume delete "$POOL_DIR" >> "$LOG_FILE" 2>&1 || true
+        else
+          sudo rm -rf "$POOL_DIR" >> "$LOG_FILE" 2>&1 || true
+        fi
       fi
       echo "        Creating default storage pool..."
       if ! incus storage create default dir >> "$LOG_FILE" 2>&1; then
