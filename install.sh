@@ -546,73 +546,105 @@ ok "Verification complete"
 
 # --- Step 9: Desktop integration (optional) --------------------------------
 
-# Only ask for desktop integration on the default instance and when running interactively
+# Only offer desktop integration on the default instance and when running interactively
 if [ -z "$INSTANCE_SUFFIX" ] && [ -t 0 ]; then
   echo ""
-  echo -e "${BOLD}  Desktop integration (optional)${NC}"
+  echo -e "${BOLD}  Desktop integration${NC}"
   echo ""
-  echo "  PAI can always be used from the terminal with commands like pai-talk."
-  echo "  You can also add a system tray icon for quick access."
+  echo "  The following terminal commands are ready to use:"
   echo ""
-  echo "    1) Install tray icon (recommended for desktop use)"
-  echo "    2) Skip — I'll use the terminal commands"
+  echo "    pai-talk      — Talk to your AI"
+  echo "    pai-talk -r   — Resume a previous conversation"
+  echo "    pai-start     — Start the sandbox"
+  echo "    pai-stop      — Stop the sandbox"
+  echo "    pai-status    — Check sandbox health"
+  echo "    pai-shell     — Open a terminal inside the sandbox"
   echo ""
-  echo -ne "  Your choice [1/2]: "
-  read -r UI_CHOICE
 
-  if [[ "$UI_CHOICE" =~ ^1$ ]]; then
+  # --- GNOME Search Provider ---
+  INSTALL_SEARCH=false
+  IS_GNOME=false
+  if [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || pgrep -x gnome-shell &>/dev/null 2>&1; then
+    IS_GNOME=true
+  fi
+
+  if [ "$IS_GNOME" = true ]; then
+    echo -e "  ${BOLD}GNOME detected.${NC} You can type \"pai\" in Activities to see PAI actions."
+    echo -ne "  Install GNOME search provider? [Y/n]: "
+    read -r SEARCH_CHOICE
+    if [[ ! "$SEARCH_CHOICE" =~ ^[Nn]$ ]]; then
+      INSTALL_SEARCH=true
+    fi
     echo ""
-    echo "        Installing PAI Status indicator..."
+  fi
+
+  # --- System Tray Icon ---
+  echo "  You can also add a system tray icon for quick access to PAI."
+  echo "  It shows sandbox status and lets you start sessions, open the"
+  echo "  web portal, and more — without opening a terminal."
+  echo ""
+  echo -ne "  Install system tray icon? [Y/n]: "
+  read -r TRAY_CHOICE
+  INSTALL_TRAY=false
+  if [[ ! "$TRAY_CHOICE" =~ ^[Nn]$ ]]; then
+    INSTALL_TRAY=true
+  fi
+
+  # --- Install what was requested ---
+  if [ "$INSTALL_TRAY" = true ] || [ "$INSTALL_SEARCH" = true ]; then
+    echo ""
 
     # Install Python GTK and AppIndicator dependencies
-    if command -v dnf &>/dev/null; then
-      sudo dnf install -y python3-gobject gtk3 libappindicator-gtk3 >> "$LOG_FILE" 2>&1 || true
-      # GNOME: install AppIndicator extension
-      if [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || pgrep -x gnome-shell &>/dev/null 2>&1; then
-        sudo dnf install -y gnome-shell-extension-appindicator >> "$LOG_FILE" 2>&1 || true
-        gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com >> "$LOG_FILE" 2>&1 || true
+    if [ "$INSTALL_TRAY" = true ]; then
+      echo "        Installing tray icon dependencies..."
+      if command -v dnf &>/dev/null; then
+        sudo dnf install -y python3-gobject gtk3 libappindicator-gtk3 >> "$LOG_FILE" 2>&1 || true
+        if [ "$IS_GNOME" = true ]; then
+          sudo dnf install -y gnome-shell-extension-appindicator >> "$LOG_FILE" 2>&1 || true
+          gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com >> "$LOG_FILE" 2>&1 || true
+        fi
+      elif command -v apt-get &>/dev/null; then
+        sudo apt-get install -y -qq python3-gi gir1.2-appindicator3-0.1 >> "$LOG_FILE" 2>&1 || true
+        if [ "$IS_GNOME" = true ]; then
+          sudo apt-get install -y -qq gnome-shell-extension-appindicator >> "$LOG_FILE" 2>&1 || true
+          gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com >> "$LOG_FILE" 2>&1 || true
+        fi
       fi
-    elif command -v apt-get &>/dev/null; then
-      sudo apt-get install -y -qq python3-gi gir1.2-appindicator3-0.1 >> "$LOG_FILE" 2>&1 || true
-      if [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || pgrep -x gnome-shell &>/dev/null 2>&1; then
-        sudo apt-get install -y -qq gnome-shell-extension-appindicator >> "$LOG_FILE" 2>&1 || true
-        gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com >> "$LOG_FILE" 2>&1 || true
-      fi
+
+      # Install the indicator script
+      cp "$SCRIPT_DIR/indicator/pai-status-indicator" "$BIN_DIR/pai-status-indicator"
+      chmod +x "$BIN_DIR/pai-status-indicator"
+
+      # Install autostart entry
+      mkdir -p "$HOME/.config/autostart"
+      cp "$SCRIPT_DIR/indicator/pai-status.desktop" "$HOME/.config/autostart/pai-status.desktop"
+
+      # Install .desktop file for application menu
+      mkdir -p "$HOME/.local/share/applications"
+      cp "$SCRIPT_DIR/indicator/pai-status.desktop" "$HOME/.local/share/applications/pai-status.desktop"
+
+      # Start the indicator now
+      nohup pai-status-indicator &>/dev/null &
+
+      ok "System tray icon installed (starts automatically on login)"
     fi
 
-    # Install the indicator script
-    cp "$SCRIPT_DIR/indicator/pai-status-indicator" "$BIN_DIR/pai-status-indicator"
-    chmod +x "$BIN_DIR/pai-status-indicator"
+    if [ "$INSTALL_SEARCH" = true ]; then
+      # Install the search provider script
+      cp "$SCRIPT_DIR/indicator/pai-search-provider" "$BIN_DIR/pai-search-provider"
+      chmod +x "$BIN_DIR/pai-search-provider"
 
-    # Install the search provider
-    cp "$SCRIPT_DIR/indicator/pai-search-provider" "$BIN_DIR/pai-search-provider"
-    chmod +x "$BIN_DIR/pai-search-provider"
-
-    # Install autostart entry
-    mkdir -p "$HOME/.config/autostart"
-    cp "$SCRIPT_DIR/indicator/pai-status.desktop" "$HOME/.config/autostart/pai-status.desktop"
-
-    # Install .desktop file for application menu
-    mkdir -p "$HOME/.local/share/applications"
-    cp "$SCRIPT_DIR/indicator/pai-status.desktop" "$HOME/.local/share/applications/pai-status.desktop"
-
-    # Install GNOME search provider (if GNOME)
-    if [ "$XDG_CURRENT_DESKTOP" = "GNOME" ] || pgrep -x gnome-shell &>/dev/null 2>&1; then
       sudo mkdir -p /usr/share/gnome-shell/search-providers
       sudo cp "$SCRIPT_DIR/indicator/pai-search-provider.ini" /usr/share/gnome-shell/search-providers/
       sudo mkdir -p /usr/share/dbus-1/services
       sudo cp "$SCRIPT_DIR/indicator/org.pai.SearchProvider.service" /usr/share/dbus-1/services/
+
       ok "GNOME search provider installed (type 'pai' in Activities)"
     fi
-
-    # Start the indicator now
-    nohup pai-status-indicator &>/dev/null &
-
-    ok "PAI Status tray icon installed and running"
-    echo "        It will start automatically when you log in."
   else
     echo ""
-    echo "        Skipped. You can install it later by re-running ./install.sh"
+    echo "        No desktop integration installed."
+    echo "        You can always use the terminal commands listed above."
   fi
 fi
 
