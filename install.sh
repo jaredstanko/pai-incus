@@ -324,6 +324,12 @@ else
 
     # Storage pool — create if missing (--auto may have created one as btrfs/zfs)
     if ! incus storage list --format csv 2>/dev/null | grep -q "^default,"; then
+      # --auto may have created the directory before failing on network.
+      # Remove the empty leftover so "storage create" doesn't complain.
+      POOL_DIR="/var/lib/incus/storage-pools/default"
+      if [ -d "$POOL_DIR" ]; then
+        sudo rm -rf "$POOL_DIR" >> "$LOG_FILE" 2>&1 || true
+      fi
       echo "        Creating default storage pool..."
       if ! incus storage create default dir >> "$LOG_FILE" 2>&1; then
         echo "        ✗ Failed to create storage pool. Check log: $LOG_FILE"
