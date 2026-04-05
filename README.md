@@ -83,9 +83,18 @@ Set both to start on boot.
 
 Wait for it to finish. This takes a few minutes.
 
-### Step 5: You're Done
+### Step 5: Desktop Integration
 
-Open http://localhost:8080 in your browser to see the web portal. From now on, just run `pai-talk` whenever you want to talk to your AI.
+The installer will show you the terminal commands that are always available, then ask two optional yes/no questions:
+
+- **GNOME search provider** (if GNOME is detected) -- type "pai" in Activities to see PAI actions
+- **System tray icon** -- shows sandbox status, lets you start sessions and open the portal without a terminal
+
+Both default to yes. Just press Enter if you want them.
+
+### Step 6: You're Done
+
+Open http://localhost:8080 in your browser to see the web portal. From now on, just run `pai-talk` whenever you want to talk to your AI (or use the tray icon if you installed it).
 
 ---
 
@@ -203,7 +212,7 @@ Your workspace, authentication, and sessions are preserved.
 ./scripts/uninstall.sh
 ```
 
-Removes the sandbox container, Incus profile, storage pool, network bridge, CLI commands, PATH block, and subuid entries. Asks before deleting workspace data. Does not remove the Incus package itself or PipeWire.
+Removes the sandbox container, Incus profile, storage pool, network bridge, CLI commands, PATH block, subuid entries, tray icon, autostart entry, and GNOME search provider. Asks before deleting workspace data. Does not remove the Incus package itself or PipeWire.
 
 ### Versions
 
@@ -235,6 +244,6 @@ The container runs **unprivileged** with:
 | Isolation | Lima VM (Apple Virtualization.framework) | Incus container (namespaces + seccomp + AppArmor) |
 | Audio | VirtIO sound device | PipeWire socket passthrough |
 | Terminal | kitty (bundled) | Any terminal |
-| Status UI | Swift menu bar app | CLI (`pai-status`) |
+| Status UI | Swift menu bar app | System tray icon + CLI (`pai-status`) |
 | Install | `brew install lima kitty` + VM provision | `dnf install incus` / `apt install incus` + container provision |
 | Architecture | macOS + Apple Silicon only | Linux x86_64 + aarch64 |
