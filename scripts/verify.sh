@@ -1,12 +1,13 @@
 #!/bin/bash
 # PAI Linux — End-State Verification
-# Checks that the full system matches the expected state from versions.env.
-# Uses 3-state model: PINNED (exact match), DRIFTED (acceptable), FAILED (blocking).
+# Checks that the full system is installed and functional.
+# Uses 2-state model: PASS (present and working), FAIL (missing or broken).
 #
 # Can be run standalone or called by install.sh at the end of install.
 #
 # Usage:
 #   ./scripts/verify.sh
+#   ./scripts/verify.sh --name=v2
 
 set -uo pipefail
 
@@ -20,75 +21,35 @@ source "$SCRIPT_DIR/common.sh" "$@" 2>/dev/null || true
 
 BOLD='\033[1m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 PASS=0
-DRIFT=0
 FAIL=0
-
-# --- Load version manifest ------------------------------------------------
-
-VERSIONS_FILE="$SCRIPT_DIR/../versions.env"
-if [ ! -f "$VERSIONS_FILE" ]; then
-  # Try parent directory
-  VERSIONS_FILE="$SCRIPT_DIR/versions.env"
-fi
-if [ ! -f "$VERSIONS_FILE" ]; then
-  echo -e "${RED}✗${NC} versions.env not found"
-  exit 1
-fi
-source "$VERSIONS_FILE"
 
 # --- Helpers --------------------------------------------------------------
 
-pinned() {
+passed() {
   local label="$1"
   local detail="${2:-}"
   if [ -n "$detail" ]; then
-    printf "  ${GREEN}%-8s${NC} %-40s %s\n" "PINNED" "$label" "$detail"
+    printf "  ${GREEN}%-8s${NC} %-40s %s\n" "PASS" "$label" "$detail"
   else
-    printf "  ${GREEN}%-8s${NC} %s\n" "PINNED" "$label"
+    printf "  ${GREEN}%-8s${NC} %s\n" "PASS" "$label"
   fi
   PASS=$((PASS + 1))
-}
-
-drifted() {
-  local label="$1"
-  local detail="${2:-}"
-  if [ -n "$detail" ]; then
-    printf "  ${YELLOW}%-8s${NC} %-40s %s\n" "DRIFTED" "$label" "$detail"
-  else
-    printf "  ${YELLOW}%-8s${NC} %s\n" "DRIFTED" "$label"
-  fi
-  DRIFT=$((DRIFT + 1))
 }
 
 failed() {
   local label="$1"
   local detail="${2:-}"
   if [ -n "$detail" ]; then
-    printf "  ${RED}%-8s${NC} %-40s %s\n" "FAILED" "$label" "$detail"
+    printf "  ${RED}%-8s${NC} %-40s %s\n" "FAIL" "$label" "$detail"
   else
-    printf "  ${RED}%-8s${NC} %s\n" "FAILED" "$label"
+    printf "  ${RED}%-8s${NC} %s\n" "FAIL" "$label"
   fi
   FAIL=$((FAIL + 1))
-}
-
-check_version() {
-  local label="$1"
-  local expected="$2"
-  local actual="$3"
-
-  if [ -z "$actual" ] || [ "$actual" = "MISSING" ]; then
-    failed "$label" "(not installed)"
-  elif [ "$actual" = "$expected" ]; then
-    pinned "$label" "($actual)"
-  else
-    drifted "$label" "(expected: $expected, got: $actual)"
-  fi
 }
 
 check_exists() {
@@ -96,7 +57,7 @@ check_exists() {
   local path="$2"
 
   if [ -e "$path" ]; then
-    pinned "$label"
+    passed "$label"
   else
     failed "$label" "(not found: $path)"
   fi
@@ -107,9 +68,20 @@ check_command() {
   local cmd="$2"
 
   if command -v "$cmd" &>/dev/null; then
-    pinned "$label"
+    passed "$label"
   else
     failed "$label" "($cmd not in PATH)"
+  fi
+}
+
+check_installed() {
+  local label="$1"
+  local actual="$2"
+
+  if [ -n "$actual" ] && [ "$actual" != "MISSING" ]; then
+    passed "$label" "($actual)"
+  else
+    failed "$label"
   fi
 }
 
@@ -123,8 +95,6 @@ if [ -n "${INSTANCE_SUFFIX:-}" ]; then
 fi
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
 echo ""
-echo "  Checking against versions.env manifest..."
-echo ""
 
 # =========================================================================
 # HOST CHECKS (run on Linux host)
@@ -135,7 +105,7 @@ echo -e "  ───────────────────────
 
 # Linux
 if [[ "$(uname -s)" = "Linux" ]]; then
-  pinned "Linux" "($(uname -r))"
+  passed "Linux" "($(uname -r))"
 else
   failed "Linux" "(not Linux)"
 fi
@@ -143,7 +113,7 @@ fi
 # Architecture
 ARCH="$(uname -m)"
 if [[ "$ARCH" = "x86_64" || "$ARCH" = "aarch64" ]]; then
-  pinned "Architecture" "($ARCH)"
+  passed "Architecture" "($ARCH)"
 else
   failed "Architecture" "($ARCH)"
 fi
@@ -154,7 +124,7 @@ check_command "systemd" "systemctl"
 # Incus
 if command -v incus &>/dev/null; then
   INCUS_VER=$(incus version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1 || echo "unknown")
-  pinned "Incus" "($INCUS_VER)"
+  passed "Incus" "($INCUS_VER)"
 else
   failed "Incus" "(incus not found)"
 fi
@@ -162,7 +132,7 @@ fi
 # CLI commands (check both PATH and install location)
 for cmd in pai-start pai-stop pai-status pai-talk pai-shell; do
   if command -v "$cmd" &>/dev/null || [ -x "$HOME/.local/bin/$cmd" ]; then
-    pinned "$cmd"
+    passed "$cmd"
   else
     failed "$cmd" "($cmd not found)"
   fi
@@ -178,7 +148,7 @@ for dir in claude-home data exchange portal work upstream; do
   fi
 done
 if [ "$WORKSPACE_OK" = true ]; then
-  pinned "Workspace directories (6/6)"
+  passed "Workspace directories (6/6)"
 fi
 
 # =========================================================================
@@ -199,15 +169,15 @@ if ! incus info "$CONTAINER" &>/dev/null 2>&1; then
 else
   CONTAINER_STATUS=$(incus info "$CONTAINER" 2>/dev/null | grep "^Status:" | awk '{print $2}')
   if [ "$CONTAINER_STATUS" = "RUNNING" ]; then
-    pinned "Container '$CONTAINER'" "(running)"
+    passed "Container '$CONTAINER'" "(running)"
   else
-    drifted "Container '$CONTAINER'" "(status: $CONTAINER_STATUS, expected: RUNNING)"
+    failed "Container '$CONTAINER'" "(status: $CONTAINER_STATUS, expected: RUNNING)"
   fi
 
   # Security checks
   PRIVILEGED=$(incus config get "$CONTAINER" security.privileged 2>/dev/null || echo "unknown")
   if [ "$PRIVILEGED" = "false" ] || [ "$PRIVILEGED" = "" ]; then
-    pinned "Unprivileged container"
+    passed "Unprivileged container"
   else
     failed "Unprivileged container" "(security.privileged=$PRIVILEGED)"
   fi
@@ -215,17 +185,16 @@ else
   if [ "$CONTAINER_STATUS" = "RUNNING" ]; then
     # Batch all container checks into a single exec for speed
     VM_CHECK_SCRIPT='
-      echo "BUN_VER=$(bun --version 2>/dev/null || echo MISSING)"
-      echo "CLAUDE_VER=$(claude --version 2>/dev/null | grep -oE "[0-9.]+" | head -1 || echo MISSING)"
-      echo "NODE_VER=$(node --version 2>/dev/null || echo MISSING)"
+      echo "BUN_VER=$(command -v bun >/dev/null 2>&1 && bun --version 2>/dev/null || echo MISSING)"
+      echo "CLAUDE_VER=$(command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | grep -oE "[0-9.]+" | head -1 || echo MISSING)"
+      echo "NODE_VER=$(command -v node >/dev/null 2>&1 && node --version 2>/dev/null || echo MISSING)"
       echo "PAI_DIR=$(test -d /home/claude/.claude/PAI && echo YES || echo NO)"
       echo "PAI_LINK=$(test -L /home/claude/.claude/skills/PAI && echo YES || echo NO)"
       echo "BASHRC_ENV=$(grep -cF "# --- PAI environment" /home/claude/.bashrc 2>/dev/null || echo 0)"
       echo "ZSHRC_ENV=$(grep -cF "# --- PAI environment" /home/claude/.zshrc 2>/dev/null || echo 0)"
       echo "COMPANION=$(test -d /home/claude/pai-companion/companion && echo YES || echo NO)"
-      echo "PW_VER=$(bunx playwright --version 2>/dev/null || echo MISSING)"
-      echo "AUDIO_PW=$(test -S /tmp/pipewire-0 && echo YES || echo NO)"
-      echo "AUDIO_PA=$(test -S /run/user/1000/pulse/native && echo YES || echo NO)"
+      echo "PW_VER=$(command -v bunx >/dev/null 2>&1 && bunx playwright --version 2>/dev/null || echo MISSING)"
+      echo "VMIP=$(test -s /home/claude/.vm-ip && echo YES || echo NO)"
       for m in .claude data exchange portal work upstream; do
         test -d "/home/claude/$m" && echo "MOUNT_${m}=YES" || echo "MOUNT_${m}=NO"
       done
@@ -235,21 +204,12 @@ else
     # Parse results
     get_val() { echo "$VM_RESULTS" | grep "^$1=" | cut -d= -f2- | tr -d '[:space:]'; }
 
-    ACTUAL_BUN=$(get_val BUN_VER)
-    check_version "Bun" "$BUN_VERSION" "$ACTUAL_BUN"
+    check_installed "Bun" "$(get_val BUN_VER)"
+    check_installed "Claude Code" "$(get_val CLAUDE_VER)"
+    check_installed "Node.js" "$(get_val NODE_VER)"
 
-    ACTUAL_CLAUDE=$(get_val CLAUDE_VER)
-    check_version "Claude Code" "$CLAUDE_CODE_VERSION" "$ACTUAL_CLAUDE"
-
-    ACTUAL_NODE=$(get_val NODE_VER)
-    if [ -n "$ACTUAL_NODE" ] && [ "$ACTUAL_NODE" != "MISSING" ]; then
-      pinned "Node.js" "($ACTUAL_NODE)"
-    else
-      failed "Node.js"
-    fi
-
-    [ "$(get_val PAI_DIR)" = "YES" ] && pinned "PAI directory" || failed "PAI directory"
-    [ "$(get_val PAI_LINK)" = "YES" ] && pinned "PAI skill symlink" || failed "PAI skill symlink"
+    [ "$(get_val PAI_DIR)" = "YES" ] && passed "PAI directory" || failed "PAI directory"
+    [ "$(get_val PAI_LINK)" = "YES" ] && passed "PAI skill symlink" || failed "PAI skill symlink"
 
     # Mount accessibility
     MOUNTS_OK=true
@@ -261,30 +221,16 @@ else
       fi
     done
     if [ "$MOUNTS_OK" = true ]; then
-      pinned "Container mounts accessible (6/6)"
+      passed "Container mounts accessible (6/6)"
     fi
 
-    [ "$(get_val BASHRC_ENV)" != "0" ] && pinned ".bashrc PAI environment block" || failed ".bashrc PAI environment block"
-    [ "$(get_val ZSHRC_ENV)" != "0" ] && pinned ".zshrc PAI environment block" || failed ".zshrc PAI environment block"
-    [ "$(get_val COMPANION)" = "YES" ] && pinned "PAI Companion repo" || failed "PAI Companion repo"
+    [ "$(get_val BASHRC_ENV)" != "0" ] && passed ".bashrc PAI environment block" || failed ".bashrc PAI environment block"
+    [ "$(get_val ZSHRC_ENV)" != "0" ] && passed ".zshrc PAI environment block" || failed ".zshrc PAI environment block"
+    [ "$(get_val COMPANION)" = "YES" ] && passed "PAI Companion repo" || failed "PAI Companion repo"
 
-    ACTUAL_PW=$(get_val PW_VER)
-    if [ -n "$ACTUAL_PW" ] && [ "$ACTUAL_PW" != "MISSING" ]; then
-      check_version "Playwright" "$PLAYWRIGHT_VERSION" "$ACTUAL_PW"
-    else
-      drifted "Playwright" "(could not verify version)"
-    fi
+    check_installed "Playwright" "$(get_val PW_VER)"
 
-    # Audio
-    AUDIO_PW=$(get_val AUDIO_PW)
-    AUDIO_PA=$(get_val AUDIO_PA)
-    if [ "$AUDIO_PW" = "YES" ]; then
-      pinned "Audio passthrough" "(PipeWire)"
-    elif [ "$AUDIO_PA" = "YES" ]; then
-      pinned "Audio passthrough" "(PulseAudio)"
-    else
-      drifted "Audio passthrough" "(no socket — check host audio)"
-    fi
+    [ "$(get_val VMIP)" = "YES" ] && passed "VM IP file" || failed "VM IP file"
   fi
 fi
 
@@ -294,18 +240,15 @@ fi
 
 echo ""
 echo -e "  ──────────────────────────────────────────────"
-TOTAL=$((PASS + DRIFT + FAIL))
-echo -e "  ${GREEN}${PASS} PINNED${NC}  ${YELLOW}${DRIFT} DRIFTED${NC}  ${RED}${FAIL} FAILED${NC}  (${TOTAL} checks)"
+TOTAL=$((PASS + FAIL))
+echo -e "  ${GREEN}${PASS} PASS${NC}  ${RED}${FAIL} FAIL${NC}  (${TOTAL} checks)"
 echo ""
 
 if [ $FAIL -gt 0 ]; then
   echo -e "  ${RED}Some checks failed.${NC} Review output above for details."
   echo -e "  Re-run ${BOLD}./install.sh${NC} to fix, or check ${BOLD}~/.pai-install.log${NC}"
   exit 1
-elif [ $DRIFT -gt 0 ]; then
-  echo -e "  ${YELLOW}Some versions drifted${NC} (likely Claude Code auto-update). Non-blocking."
-  exit 0
 else
-  echo -e "  ${GREEN}All checks passed. System is deterministic.${NC}"
+  echo -e "  ${GREEN}All checks passed.${NC}"
   exit 0
 fi

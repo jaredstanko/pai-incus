@@ -86,9 +86,9 @@ This is a real security boundary, not just process isolation.
 - Internet connection
 - sudo access (for initial Incus install only)
 
-## Version Pinning
+## Versions
 
-All dependencies are pinned in `versions.env`. Edit versions there, not in scripts. Run `./scripts/verify.sh` to check the full system state against the manifest.
+Tools (Bun, Claude Code, Playwright) install at their latest versions — matching the pai-lima approach. Only the Node.js major version (22 LTS) and container image (Ubuntu 24.04) are pinned. Configuration lives in `versions.env`. Run `./scripts/verify.sh` to check the full system state.
 
 ## Parallel Instances
 

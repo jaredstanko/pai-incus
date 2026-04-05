@@ -1,10 +1,10 @@
 #!/bin/bash
-# PAI Linux — Deterministic Host Installer for Linux
+# PAI Linux — Host Installer for Linux
 # Single entry point: installs Incus, creates the container,
 # provisions it, and installs CLI commands.
 #
-# All dependency versions are pinned in versions.env (single source of truth).
-# This script is idempotent — safe to re-run if interrupted.
+# Tools are installed at their latest versions. The container image is pinned
+# in versions.env. This script is idempotent — safe to re-run if interrupted.
 #
 # Usage:
 #   ./install.sh                        # Normal install (default "pai" instance)
@@ -112,11 +112,6 @@ echo ""
 echo "  Container:   $CONTAINER_NAME"
 echo "  Workspace:   $WORKSPACE"
 echo "  Portal port: $PORTAL_PORT"
-echo ""
-echo "  Pinned versions (from versions.env):"
-echo "    Bun:         ${BUN_VERSION}"
-echo "    Claude Code: ${CLAUDE_CODE_VERSION}"
-echo "    Playwright:  ${PLAYWRIGHT_VERSION}"
 echo ""
 echo "  Log: $LOG_FILE"
 echo ""

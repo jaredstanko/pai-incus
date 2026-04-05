@@ -92,38 +92,20 @@ VM_RESULTS=$(incus exec "$CONTAINER_NAME" --user 1000 --group 1000 -- bash -lc "
 
 get_val() { echo "$VM_RESULTS" | grep "^$1=" | cut -d= -f2- | tr -d '[:space:]'; }
 
-# Load versions.env for comparison
-VERSIONS_FILE=""
-for candidate in "$HOME/.local/lib/pai/versions.env" "$(dirname "$(readlink -f "$0")")/../versions.env"; do
-  if [ -f "$candidate" ]; then
-    VERSIONS_FILE="$candidate"
-    break
-  fi
-done
-
-if [ -n "$VERSIONS_FILE" ]; then
-  source "$VERSIONS_FILE"
-fi
-
 show_version() {
   local label="$1"
   local actual="$2"
-  local expected="${3:-}"
 
   if [ -z "$actual" ] || [ "$actual" = "MISSING" ]; then
     printf "  %-14s ${RED}NOT INSTALLED${NC}\n" "$label:"
-  elif [ -n "$expected" ] && [ "$actual" = "$expected" ]; then
-    printf "  %-14s ${GREEN}%s${NC} (pinned)\n" "$label:" "$actual"
-  elif [ -n "$expected" ]; then
-    printf "  %-14s ${YELLOW}%s${NC} (expected: %s)\n" "$label:" "$actual" "$expected"
   else
-    printf "  %-14s %s\n" "$label:" "$actual"
+    printf "  %-14s ${GREEN}%s${NC}\n" "$label:" "$actual"
   fi
 }
 
-show_version "Bun" "$(get_val BUN)" "${BUN_VERSION:-}"
-show_version "Claude Code" "$(get_val CLAUDE)" "${CLAUDE_CODE_VERSION:-}"
-show_version "Node.js" "$(get_val NODE)" ""
+show_version "Bun" "$(get_val BUN)"
+show_version "Claude Code" "$(get_val CLAUDE)"
+show_version "Node.js" "$(get_val NODE)"
 
 PAI_STATUS=$(get_val PAI)
 [ "$PAI_STATUS" = "YES" ] && printf "  %-14s ${GREEN}installed${NC}\n" "PAI:" || printf "  %-14s ${RED}not found${NC}\n" "PAI:"

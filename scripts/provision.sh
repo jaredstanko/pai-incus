@@ -1,10 +1,10 @@
 #!/bin/bash
-# PAI Provisioning Script — Deterministic Container Setup
+# PAI Provisioning Script — Container Setup
 # Run this INSIDE the Incus container as the 'claude' user.
 # Called automatically by install.sh on the host.
 #
-# All versions are sourced from versions.env (single source of truth).
-# This script is idempotent — safe to re-run if interrupted.
+# Tools are installed at their latest versions. The container image is pinned
+# in versions.env. This script is idempotent — safe to re-run if interrupted.
 #
 # Usage:
 #   bash ~/provision.sh
@@ -31,7 +31,7 @@ retry() {
   local max_attempts=3
   local delay=5
   local attempt=1
-  local cmd="$@"
+  local cmd="$*"
 
   while [ $attempt -le $max_attempts ]; do
     if eval "$cmd"; then
@@ -57,19 +57,31 @@ if [ ! -f "$VERSIONS_FILE" ]; then
 fi
 source "$VERSIONS_FILE"
 
+# Use a safe TERM for installation — xterm-kitty can cause installers
+# to hang when run via incus exec (not a real kitty terminal).
+# The shell env block below sets xterm-kitty for interactive use.
+export TERM=xterm-256color
+
 echo -e "${BOLD}"
 echo "============================================"
-echo "  PAI Provisioning (Deterministic)"
+echo "  PAI Provisioning"
 echo "============================================"
 echo -e "${NC}"
-echo "  Versions from manifest:"
-echo "    Bun:         ${BUN_VERSION}"
-echo "    Claude Code: ${CLAUDE_CODE_VERSION}"
-echo "    Playwright:  ${PLAYWRIGHT_VERSION}"
-echo ""
 
 # --- Step 1: System packages ----------------------------------------------
-step "1/7" "Installing system packages..."
+step "1/6" "Installing system packages..."
+
+# Add NodeSource repo for Node.js 22 LTS before apt-get update (single update pass)
+NODE_NEEDS_SETUP=false
+if command -v node &>/dev/null && node --version 2>/dev/null | grep -q "^v2[2-9]"; then
+  log "Node.js already installed: $(node --version)"
+else
+  NODE_NEEDS_SETUP=true
+  log "Adding NodeSource repo for Node.js ${NODE_MAJOR_VERSION} LTS..."
+  sudo mkdir -p /etc/apt/keyrings
+  retry "curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg"
+  echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR_VERSION}.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+fi
 
 retry "sudo apt-get update -qq"
 # shellcheck disable=SC2086
@@ -79,38 +91,100 @@ retry "sudo apt-get install -y -qq $APT_PACKAGES"
 retry "sudo apt-get install -y -qq pulseaudio-utils libpulse0 pipewire-pulse"
 log "System packages installed"
 
-# --- Step 2: Bun ----------------------------------------------------------
-step "2/7" "Installing Bun ${BUN_VERSION}..."
-
-CURRENT_BUN=""
-if command -v bun &>/dev/null; then
-  CURRENT_BUN=$(bun --version 2>/dev/null || echo "")
+if [ "$NODE_NEEDS_SETUP" = true ]; then
+  retry "sudo apt-get install -y -qq nodejs"
+  log "Node.js $(node --version) installed from NodeSource"
 fi
 
-if [ "$CURRENT_BUN" = "$BUN_VERSION" ]; then
-  log "Bun already at pinned version ${BUN_VERSION}"
+# uv — modern Python package runner (replaces pip for running scripts)
+if command -v uv &>/dev/null; then
+  log "uv already installed: $(uv --version 2>/dev/null || echo 'present')"
 else
-  if [ -n "$CURRENT_BUN" ]; then
-    warn "Bun ${CURRENT_BUN} installed, upgrading to ${BUN_VERSION}..."
+  retry "curl -LsSf https://astral.sh/uv/install.sh | sh"
+  export PATH="$HOME/.local/bin:$PATH"
+  log "uv installed: $(uv --version 2>/dev/null || echo 'installed')"
+fi
+
+# yt-dlp via uv tool (isolated install, apt version is years stale)
+if command -v yt-dlp &>/dev/null; then
+  log "yt-dlp already installed: $(yt-dlp --version 2>/dev/null || echo 'present')"
+else
+  uv tool install yt-dlp
+  log "yt-dlp installed via uv: $(yt-dlp --version 2>/dev/null || echo 'installed')"
+fi
+
+# Install 'say' shim — Linux replacement for macOS 'say' command.
+# Fallback chain: Kokoro (if running) → espeak-ng → silence.
+# PAI's VoiceServer calls 'say' when no ElevenLabs key is configured.
+mkdir -p "$HOME/.local/bin"
+cat > "$HOME/.local/bin/say" <<'SAYSHIM'
+#!/bin/bash
+# say — Linux shim for macOS 'say' command
+# Fallback: Kokoro TTS → espeak-ng → silence
+TEXT="$*"
+[ -z "$TEXT" ] && exit 0
+
+# Try Kokoro TTS if running
+if curl -sf http://localhost:7880/health >/dev/null 2>&1; then
+  TMPFILE=$(mktemp /tmp/say-XXXXXX.mp3)
+  if curl -s -X POST http://localhost:7880/tts \
+    -H "Content-Type: application/json" \
+    -d "{\"text\": \"$TEXT\"}" -o "$TMPFILE" 2>/dev/null && [ -s "$TMPFILE" ]; then
+    PULSE_SERVER=unix:/run/pulse/native ffplay -nodisp -autoexit -loglevel quiet "$TMPFILE" 2>/dev/null
+    rm -f "$TMPFILE"
+    exit 0
   fi
-  retry "curl -fsSL https://bun.sh/install | bash -s 'bun-v${BUN_VERSION}'"
+  rm -f "$TMPFILE"
+fi
+
+# Fall back to espeak-ng
+if command -v espeak-ng >/dev/null 2>&1; then
+  PULSE_SERVER=unix:/run/pulse/native espeak-ng "$TEXT" 2>/dev/null
+  exit 0
+fi
+SAYSHIM
+chmod +x "$HOME/.local/bin/say"
+log "Linux 'say' shim installed (Kokoro → espeak-ng fallback)"
+
+# Install 'afplay' shim — Linux replacement for macOS audio player.
+# Wraps ffplay with PulseAudio socket so any code calling afplay just works.
+cat > "$HOME/.local/bin/afplay" <<'AFSHIM'
+#!/bin/bash
+# afplay — Linux shim for macOS afplay command
+# Routes audio through ffplay → PulseAudio → host audio
+FILE=""
+VOLUME="1.0"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -v) VOLUME="$2"; shift 2 ;;
+    -*) shift ;;
+    *) FILE="$1"; shift ;;
+  esac
+done
+[ -z "$FILE" ] || [ ! -f "$FILE" ] && exit 1
+SDL_VOL=$(awk "BEGIN {printf \"%d\", $VOLUME * 100}")
+PULSE_SERVER=unix:/run/pulse/native ffplay -nodisp -autoexit -volume "$SDL_VOL" -loglevel quiet "$FILE" 2>/dev/null
+AFSHIM
+chmod +x "$HOME/.local/bin/afplay"
+log "Linux 'afplay' shim installed (ffplay + PulseAudio)"
+
+# --- Step 2: Bun ----------------------------------------------------------
+step "2/6" "Installing Bun..."
+
+if command -v bun &>/dev/null; then
+  log "Bun already installed: $(bun --version)"
+else
+  retry "curl -fsSL https://bun.sh/install | bash"
   source ~/.bashrc 2>/dev/null || true
-  log "Bun ${BUN_VERSION} installed"
+  log "Bun installed"
 fi
 
 # Ensure bun is on PATH for the rest of this script
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Verify
-INSTALLED_BUN=$(bun --version 2>/dev/null || echo "MISSING")
-if [ "$INSTALLED_BUN" != "$BUN_VERSION" ]; then
-  err "Bun version mismatch: expected ${BUN_VERSION}, got ${INSTALLED_BUN}"
-  exit 1
-fi
-
 # --- Step 3: Claude Code --------------------------------------------------
-step "3/7" "Installing Claude Code ${CLAUDE_CODE_VERSION}..."
+step "3/6" "Installing Claude Code..."
 
 # Detect and remove old npm-based installs
 CLAUDE_NEEDS_INSTALL=false
@@ -122,38 +196,30 @@ if command -v claude &>/dev/null; then
     bun remove -g @anthropic-ai/claude-code 2>/dev/null || true
     CLAUDE_NEEDS_INSTALL=true
   else
-    CURRENT_CLAUDE=$(claude --version 2>/dev/null | grep -oE '[0-9.]+' | head -1 || echo "")
-    if [ "$CURRENT_CLAUDE" = "$CLAUDE_CODE_VERSION" ]; then
-      log "Claude Code already at pinned version ${CLAUDE_CODE_VERSION}"
-    else
-      warn "Claude Code ${CURRENT_CLAUDE} installed, upgrading to ${CLAUDE_CODE_VERSION}..."
-      CLAUDE_NEEDS_INSTALL=true
-    fi
+    log "Claude Code already installed (native): $(claude --version 2>/dev/null || echo 'installed')"
   fi
 else
   CLAUDE_NEEDS_INSTALL=true
 fi
 
 if [ "$CLAUDE_NEEDS_INSTALL" = true ]; then
-  retry "curl -fsSL https://claude.ai/install.sh | bash -s -- ${CLAUDE_CODE_VERSION}"
-  log "Claude Code ${CLAUDE_CODE_VERSION} installed"
+  retry "curl -fsSL https://claude.ai/install.sh | bash"
+  log "Claude Code installed"
 fi
 
+# Claude Code may install to ~/.claude/bin or ~/.local/bin depending on version
 export PATH="$HOME/.local/bin:$HOME/.claude/bin:$PATH"
 
-# Verify (allow drift — Claude Code may auto-update)
-INSTALLED_CLAUDE=$(claude --version 2>/dev/null | grep -oE '[0-9.]+' | head -1 || echo "MISSING")
-if [ "$INSTALLED_CLAUDE" = "$CLAUDE_CODE_VERSION" ]; then
-  log "Claude Code version verified: ${INSTALLED_CLAUDE}"
-elif [ "$INSTALLED_CLAUDE" != "MISSING" ]; then
-  warn "Claude Code drifted: expected ${CLAUDE_CODE_VERSION}, got ${INSTALLED_CLAUDE} (auto-update)"
+# Verify
+if command -v claude &>/dev/null; then
+  log "Claude Code verified: $(claude --version 2>/dev/null | grep -oE '[0-9.]+' | head -1 || echo 'present')"
 else
   err "Claude Code not found after install"
   exit 1
 fi
 
 echo ""
-warn "After setup completes, run 'claude' to authenticate with your API key."
+warn "After setup completes, run 'claude' and sign in with your Anthropic account."
 echo ""
 
 # --- Step 3b: Shell environment -------------------------------------------
@@ -179,12 +245,14 @@ export PATH="$HOME/go/bin:$PATH"
 # Node global (npm install -g)
 export PATH="$HOME/.npm-global/bin:$PATH"
 
+# Terminal — kitty-terminfo is installed in the container
+export TERM=xterm-kitty
+
+# Audio — PulseAudio system-wide socket
+export PULSE_SERVER=unix:/run/pulse/native
+
 # Default editor
 export EDITOR=nano
-
-# Audio — PipeWire socket from host
-export PIPEWIRE_REMOTE=/tmp/pipewire-0
-export PULSE_SERVER=unix:/run/user/1000/pulse/native
 
 # PAI launcher
 alias pai='\''bun $HOME/.claude/PAI/Tools/pai.ts'\''
@@ -211,7 +279,7 @@ fi
 export PATH="$HOME/.claude/bin:$HOME/.local/bin:$HOME/go/bin:$HOME/.npm-global/bin:$PATH"
 
 # --- Step 4: PAI ----------------------------------------------------------
-step "4/7" "Installing PAI..."
+step "4/6" "Installing PAI..."
 
 if [ -d "$HOME/.claude/PAI" ] || [ -d "$HOME/.claude/skills/PAI" ]; then
   log "PAI already installed. Skipping."
@@ -221,12 +289,6 @@ else
   rm -rf PAI
   retry "git clone '${PAI_REPO}'"
   cd PAI
-
-  # Pin to specific commit if configured
-  if [ "$PAI_COMMIT" != "HEAD" ]; then
-    git checkout "$PAI_COMMIT"
-    log "Checked out PAI commit: ${PAI_COMMIT}"
-  fi
 
   LATEST_RELEASE=$(ls Releases/ | sort -V | tail -1)
   log "Using PAI release: $LATEST_RELEASE"
@@ -259,8 +321,49 @@ fi
 
 source ~/.bashrc 2>/dev/null || true
 
+# --- Step 4b: Container IP and .env --------------------------------------
+VM_IP="localhost"
+echo "$VM_IP" > ~/.vm-ip
+log "VM IP: $VM_IP (Incus port-forwards to host)"
+
+if [ -d "$HOME/.claude" ] && touch "$HOME/.claude/.env-test" 2>/dev/null; then
+  rm -f "$HOME/.claude/.env-test"
+  if [ -f ~/.claude/.env ]; then
+    sed -i '/^VM_IP=/d; /^PORTAL_PORT=/d' ~/.claude/.env
+  fi
+  cat >> ~/.claude/.env <<ENVEOF
+VM_IP=$VM_IP
+PORTAL_PORT=8080
+ENVEOF
+  log "VM_IP and PORTAL_PORT written to ~/.claude/.env"
+
+  # Pre-trust common workspaces so Claude Code doesn't prompt on first run
+  CLAUDE_JSON="$HOME/.claude.json"
+  if [ ! -f "$CLAUDE_JSON" ]; then
+    cat > "$CLAUDE_JSON" <<TRUSTEOF
+{
+  "projects": {
+    "$HOME/.claude": {
+      "allowedTools": [],
+      "hasTrustDialogAccepted": true
+    },
+    "$HOME": {
+      "allowedTools": [],
+      "hasTrustDialogAccepted": true
+    }
+  }
+}
+TRUSTEOF
+    log "Claude Code workspaces pre-trusted"
+  else
+    log "Claude Code config already exists — skipping trust setup"
+  fi
+else
+  warn "$HOME/.claude mount not writable — skipping .env write"
+fi
+
 # --- Step 5: PAI Companion ------------------------------------------------
-step "5/7" "Cloning PAI Companion..."
+step "5/6" "Cloning PAI Companion..."
 
 if [ -d "$HOME/pai-companion/companion" ]; then
   log "PAI Companion already cloned"
@@ -268,13 +371,6 @@ else
   cd /tmp
   rm -rf pai-companion
   if retry "git clone '${PAI_COMPANION_REPO}'"; then
-    # Pin to specific commit if configured
-    if [ "$PAI_COMPANION_COMMIT" != "HEAD" ]; then
-      cd pai-companion
-      git checkout "$PAI_COMPANION_COMMIT"
-      cd /tmp
-      log "Checked out PAI Companion commit: ${PAI_COMPANION_COMMIT}"
-    fi
     rm -rf "$HOME/pai-companion"
     cp -r /tmp/pai-companion "$HOME/pai-companion"
     rm -rf /tmp/pai-companion
@@ -285,36 +381,18 @@ else
 fi
 
 # --- Step 6: Playwright ---------------------------------------------------
-step "6/7" "Installing Playwright ${PLAYWRIGHT_VERSION}..."
+step "6/6" "Installing Playwright..."
 
 if command -v bun &>/dev/null; then
   cd /tmp
   mkdir -p playwright-setup && cd playwright-setup
   bun init -y 2>/dev/null || true
-  bun add "playwright@${PLAYWRIGHT_VERSION}" 2>/dev/null || true
+  bun add playwright 2>/dev/null || true
   retry "bunx playwright install --with-deps chromium" || warn "Playwright install may need manual completion."
   cd /tmp && rm -rf playwright-setup
-  log "Playwright ${PLAYWRIGHT_VERSION} installed"
+  log "Playwright installed"
 else
   warn "Bun not found. Skipping Playwright."
-fi
-
-# --- Step 7: Audio test ---------------------------------------------------
-step "7/7" "Testing audio passthrough..."
-
-if [ -S "/tmp/pipewire-0" ] || [ -S "/run/user/1000/pulse/native" ]; then
-  log "Audio socket detected from host"
-  if command -v pactl &>/dev/null; then
-    if pactl info &>/dev/null 2>&1; then
-      log "PulseAudio/PipeWire connection verified"
-    else
-      warn "Audio socket present but connection failed. May need host audio running."
-    fi
-  else
-    warn "pactl not available — skipping audio connection test"
-  fi
-else
-  warn "No audio socket found. Audio passthrough requires PipeWire/PulseAudio on host."
 fi
 
 # --- Sanity check ---------------------------------------------------------
@@ -326,7 +404,8 @@ for check_cmd in \
   "command -v bun" \
   "command -v claude" \
   "test -d $HOME/.claude/PAI" \
-  "grep -qF '# --- PAI environment' ~/.bashrc"; do
+  "grep -qF '# --- PAI environment' ~/.bashrc" \
+  "test -s $HOME/.vm-ip"; do
   if ! eval "$check_cmd" &>/dev/null; then
     err "Sanity check failed: $check_cmd"
     FAIL=$((FAIL + 1))
@@ -349,10 +428,5 @@ log "PAI:          ~/.claude/"
 log "Companion:    ~/pai-companion/ (ready for Claude to install)"
 log "Log:          $LOG_FILE"
 echo ""
-warn "Next steps:"
-warn "  1. Run 'claude' to authenticate with your Anthropic API key"
-warn "  2. Ask Claude to install PAI Companion:"
-warn "     \"Install PAI Companion following ~/pai-companion/companion/INSTALL.md."
-warn "      Skip Docker (use Bun directly) and skip the voice module.\""
-warn "  3. Start using PAI: source ~/.bashrc && pai"
+warn "Next steps — follow the instructions shown by the installer on your host."
 echo ""
