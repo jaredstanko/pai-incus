@@ -1,4 +1,4 @@
-# PAI Linux — Your Own AI Assistant on Linux
+# PAI-Incus — Your Own AI Assistant on Linux
 
 A sandboxed AI workspace running Claude Code on your Linux machine. One command to install, one command to start talking to your AI.
 
@@ -41,14 +41,14 @@ Open your terminal and paste this:
 
 ```bash
 command -v git >/dev/null || { sudo dnf install -y git-core 2>/dev/null || sudo apt-get install -y git 2>/dev/null; }
-git clone https://github.com/jaredstanko/pai-linux.git
-cd pai-linux
+git clone https://github.com/jaredstanko/pai-incus.git
+cd pai-incus
 ./install.sh
 ```
 
 The first line installs `git` if you don't have it yet. The installer handles everything else automatically. You'll see a lot of output scrolling by -- **ignore it all** until you see the final instructions.
 
-> **"Group membership" message?** If the installer says to log out and back in, do that, then come back to the `pai-linux` folder and run `./install.sh` again. It will pick up where it left off.
+> **"Group membership" message?** If the installer says to log out and back in, do that, then come back to the `pai-incus` folder and run `./install.sh` again. It will pick up where it left off.
 
 ### Step 2: Open a PAI Session
 
@@ -136,7 +136,7 @@ Your data stays on your machine. You can destroy and recreate the sandbox withou
 
 **No audio** -- Make sure PipeWire or PulseAudio is running on your system. Most desktop Linux installs have this by default.
 
-**Something else broke** -- Run `./scripts/verify.sh` to see what's working and what's not. If you're stuck, [open an issue](https://github.com/jaredstanko/pai-linux/issues).
+**Something else broke** -- Run `./scripts/verify.sh` to see what's working and what's not. If you're stuck, [open an issue](https://github.com/jaredstanko/pai-incus/issues).
 
 ---
 
@@ -181,7 +181,7 @@ pai-status --name=v2
 ### Upgrading
 
 ```bash
-cd pai-linux
+cd pai-incus
 git pull
 ./scripts/upgrade.sh
 ```
@@ -228,7 +228,7 @@ The container runs **unprivileged** with:
 
 ### Comparison with pai-lima (macOS)
 
-| | pai-lima (macOS) | pai-linux |
+| | pai-lima (macOS) | pai-incus |
 |---|---|---|
 | Isolation | Lima VM (Apple Virtualization.framework) | Incus container (namespaces + seccomp + AppArmor) |
 | Audio | VirtIO sound device | PipeWire socket passthrough |

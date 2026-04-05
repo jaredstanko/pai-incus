@@ -157,7 +157,7 @@ echo "    - CLI commands (pai-start, pai-stop, pai-status, pai-talk, pai-shell)"
 echo ""
 echo "  What was NOT removed:"
 echo "    - Incus itself"
-echo "    - This repo (pai-linux/)"
+echo "    - This repo (pai-incus/)"
 if [ -d "$WORKSPACE" ]; then
   echo "    - ${WORKSPACE}/ (you chose to keep it)"
 fi
