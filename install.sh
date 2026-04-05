@@ -206,8 +206,19 @@ fi
 if ! incus version &>/dev/null 2>&1; then
   echo "        Acquiring incus-admin group for this session..."
   RERUN_ARGS=("$@")
-  sg incus-admin -c "cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
-  exit $?
+  INSTALL_CMD="cd $(pwd) && ./install.sh ${RERUN_ARGS[*]}"
+  # Try sg (works in most interactive and SSH contexts)
+  sg incus-admin -c "$INSTALL_CMD" && exit 0
+  # sg may fail silently in some contexts — check if it actually ran
+  sg incus-admin -c "$INSTALL_CMD" 2>/dev/null && exit 0
+  echo ""
+  echo -e "        ${YELLOW}Group membership requires a new login session.${NC}"
+  echo -e "        ${YELLOW}Run one of these, then re-run ./install.sh:${NC}"
+  echo ""
+  echo -e "        ${BOLD}newgrp incus-admin${NC}    (stays in current terminal)"
+  echo -e "        ${BOLD}Log out and back in${NC}   (applies to all terminals)"
+  echo ""
+  exit 1
 fi
 
 # Ensure root has subordinate UID/GID ranges for unprivileged containers.
