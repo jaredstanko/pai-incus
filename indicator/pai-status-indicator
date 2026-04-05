@@ -61,9 +61,22 @@ def get_container_status():
 
 
 def run_in_terminal(command):
-    """Open a terminal emulator and run a command inside it."""
+    """Open the user's terminal emulator and run a command inside it."""
+    # Prefer the user's configured default terminal
+    defaults = [
+        os.environ.get("TERMINAL", ""),       # User's explicit preference
+        "x-terminal-emulator",                 # Debian/Ubuntu default
+        "xdg-terminal-exec",                   # Freedesktop standard (newer)
+    ]
+    for term in defaults:
+        if term and subprocess.run(
+            ["which", term], capture_output=True
+        ).returncode == 0:
+            subprocess.Popen([term, "-e", f"bash -c '{command}'"])
+            return
+
+    # Fall back to common terminals
     terminals = [
-        # Try common terminals in preference order
         ("gnome-terminal", ["gnome-terminal", "--", "bash", "-c", command]),
         ("konsole", ["konsole", "-e", "bash", "-c", command]),
         ("xfce4-terminal", ["xfce4-terminal", "-e", f"bash -c '{command}'"]),
