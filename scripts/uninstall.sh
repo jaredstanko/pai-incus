@@ -1,5 +1,5 @@
 #!/bin/bash
-# PAI Linux — Cleanup
+# PAI-Incus — Cleanup
 # Removes everything installed by install.sh.
 # Asks before removing workspace data.
 #
@@ -28,13 +28,13 @@ warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 
 echo ""
 echo -e "${BOLD}${RED}═══════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  PAI Linux — Cleanup${NC}"
+echo -e "${BOLD}  PAI-Incus — Cleanup${NC}"
 if [ -n "$INSTANCE_SUFFIX" ]; then
   echo -e "${BOLD}  Instance: ${RED}${INSTANCE_NAME}${NC}"
 fi
 echo -e "${BOLD}${RED}═══════════════════════════════════════════════${NC}"
 echo ""
-echo "  This will remove PAI Linux components."
+echo "  This will remove PAI-Incus components."
 echo "  It will NOT uninstall Incus itself."
 echo ""
 echo "  Target: Container '${CONTAINER_NAME}', workspace '${WORKSPACE}/'"

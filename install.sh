@@ -1,5 +1,5 @@
 #!/bin/bash
-# PAI Linux — Host Installer for Linux
+# PAI-Incus — Host Installer for Linux
 # Single entry point: installs Incus, creates the container,
 # provisions it, and installs CLI commands.
 #
@@ -93,7 +93,7 @@ CONTAINER_IMAGE="images:ubuntu/24.04"
 
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  Sandbox My AI — PAI Linux Installer${NC}"
+echo -e "${BOLD}  Sandbox My AI — PAI-Incus Installer${NC}"
 if [ -n "$INSTANCE_SUFFIX" ]; then
   echo -e "${BOLD}  Instance: ${CYAN}${INSTANCE_NAME}${NC}"
 fi
@@ -111,7 +111,7 @@ echo "  Log: $LOG_FILE"
 echo ""
 
 # Initialize log
-echo "=== PAI Linux Install $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > "$LOG_FILE"
+echo "=== PAI-Incus Install $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" > "$LOG_FILE"
 
 # --- Step 1: System requirements ------------------------------------------
 
@@ -132,7 +132,7 @@ ok "Architecture: $ARCH"
 
 # Check systemd
 if ! command -v systemctl &>/dev/null; then
-  fail "systemd not found." "PAI Linux requires a systemd-based distribution."
+  fail "systemd not found." "PAI-Incus requires a systemd-based distribution."
 fi
 ok "systemd present"
 
@@ -292,17 +292,18 @@ else
     ok "Incus initialized"
   else
     # --auto can fail when common subnets are taken (VMs).
-    # Create missing pieces individually.
+    # It may have partially succeeded (e.g. created storage but failed on network).
+    # Re-check state and create only what's still missing.
 
-    # Storage pool — create if missing
-    if [ "$HAS_STORAGE" -eq 0 ]; then
+    # Storage pool — create if missing (--auto may have created one as btrfs/zfs)
+    if ! incus storage list --format csv 2>/dev/null | grep -q "^default,"; then
       echo "        Creating default storage pool..."
       incus storage create default dir >> "$LOG_FILE" 2>&1
     fi
 
     # Managed network bridge — create if missing, find a free subnet
     # (An unmanaged bridge or stale dnsmasq may exist from a previous install)
-    if [ "$HAS_NETWORK" -eq 0 ]; then
+    if ! incus network list --format csv 2>/dev/null | grep "^incusbr0," | grep -q ",YES,"; then
       # Clean up stale bridge interface and dnsmasq from previous installs
       if ip link show incusbr0 &>/dev/null 2>&1; then
         sudo ip link delete incusbr0 >> "$LOG_FILE" 2>&1 || true
@@ -321,7 +322,7 @@ else
     fi
 
     # Ensure default profile has the network and storage
-    if [ "$HAS_PROFILE_ETH0" -eq 0 ]; then
+    if ! incus profile show default 2>/dev/null | grep -q "network: incusbr0"; then
       incus profile device add default eth0 nic network=incusbr0 >> "$LOG_FILE" 2>&1 || true
     fi
     incus profile device add default root disk path=/ pool=default >> "$LOG_FILE" 2>&1 || true

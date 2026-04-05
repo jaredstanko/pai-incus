@@ -1,5 +1,5 @@
 #!/bin/bash
-# PAI Linux — End-State Verification
+# PAI-Incus — End-State Verification
 # Checks that the full system is installed and functional.
 # Uses 2-state model: PASS (present and working), FAIL (missing or broken).
 #
@@ -89,7 +89,7 @@ check_installed() {
 
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  PAI Linux — System Verification${NC}"
+echo -e "${BOLD}  PAI-Incus — System Verification${NC}"
 if [ -n "${INSTANCE_SUFFIX:-}" ]; then
   echo -e "${BOLD}  Instance: ${CYAN}${INSTANCE_NAME}${NC}"
 fi

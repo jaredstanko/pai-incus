@@ -1,5 +1,5 @@
 #!/bin/bash
-# PAI Linux — Backup and Restore
+# PAI-Incus — Backup and Restore
 # Uses Incus snapshots for the container and file copy for the workspace.
 #
 # Usage:

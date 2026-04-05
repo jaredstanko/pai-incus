@@ -28,7 +28,7 @@ fi
 
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  PAI Linux — Status${NC}"
+echo -e "${BOLD}  PAI-Incus — Status${NC}"
 if [ -n "$INSTANCE_SUFFIX" ]; then
   echo -e "${BOLD}  Instance: ${CYAN}${INSTANCE_NAME}${NC}"
 fi

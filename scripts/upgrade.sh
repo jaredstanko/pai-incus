@@ -1,5 +1,5 @@
 #!/bin/bash
-# PAI Linux — Upgrade existing installation
+# PAI-Incus — Upgrade existing installation
 # Safe to run on an existing container without losing data.
 #
 # What this upgrades:
@@ -46,7 +46,7 @@ skip() { echo -e "        ${YELLOW}⊘${NC} $1 (already up to date)"; }
 
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  Sandbox My AI — PAI Linux Upgrade${NC}"
+echo -e "${BOLD}  Sandbox My AI — PAI-Incus Upgrade${NC}"
 if [ -n "$INSTANCE_SUFFIX" ]; then
   echo -e "${BOLD}  Instance: ${CYAN}${INSTANCE_NAME}${NC}"
 fi

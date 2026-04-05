@@ -1,5 +1,5 @@
 #!/bin/bash
-# PAI Linux — Shared instance configuration
+# PAI-Incus — Shared instance configuration
 # Source this file at the top of every script to get instance-aware variables.
 #
 # Parses --name=X from arguments and sets:
