@@ -18,7 +18,7 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-LOG_FILE="$HOME/.provision.log"
+LOG_FILE="/tmp/pai-provision.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log()  { echo -e "  ${GREEN}✓${NC} $1"; }

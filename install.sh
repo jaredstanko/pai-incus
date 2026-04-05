@@ -384,8 +384,10 @@ if ! incus exec "$CONTAINER_NAME" -- id claude &>/dev/null 2>&1; then
   if incus exec "$CONTAINER_NAME" -- id -u ubuntu 2>/dev/null | grep -q '^1000$'; then
     incus exec "$CONTAINER_NAME" -- userdel -r ubuntu >> "$LOG_FILE" 2>&1 || true
   fi
-  incus exec "$CONTAINER_NAME" -- useradd -m -s /bin/bash -u 1000 claude >> "$LOG_FILE" 2>&1
+  incus exec "$CONTAINER_NAME" -- useradd -m -s /bin/bash -u 1000 claude >> "$LOG_FILE" 2>&1 || true
   incus exec "$CONTAINER_NAME" -- usermod -aG sudo claude >> "$LOG_FILE" 2>&1
+  # Ensure home directory ownership (may be wrong if pre-existing from image)
+  incus exec "$CONTAINER_NAME" -- chown claude:claude /home/claude >> "$LOG_FILE" 2>&1
   # Allow passwordless sudo for provisioning
   incus exec "$CONTAINER_NAME" -- bash -c 'echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude' >> "$LOG_FILE" 2>&1
   ok "User 'claude' created (UID 1000)"
