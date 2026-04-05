@@ -12,6 +12,10 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Source shared instance configuration
+# shellcheck source=common.sh
+source "$SCRIPT_DIR/common.sh" "$@" 2>/dev/null || true
+
 # --- Colors ---------------------------------------------------------------
 
 BOLD='\033[1m'
@@ -114,6 +118,9 @@ check_command() {
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
 echo -e "${BOLD}  PAI Linux — System Verification${NC}"
+if [ -n "${INSTANCE_SUFFIX:-}" ]; then
+  echo -e "${BOLD}  Instance: ${CYAN}${INSTANCE_NAME}${NC}"
+fi
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
 echo ""
 echo "  Checking against versions.env manifest..."
@@ -158,7 +165,7 @@ for cmd in pai-start pai-stop pai-status pai-talk pai-shell; do
 done
 
 # Workspace directories
-WORKSPACE="$HOME/pai-workspace"
+WORKSPACE="${WORKSPACE:-$HOME/pai-workspace}"
 WORKSPACE_OK=true
 for dir in claude-home data exchange portal work upstream; do
   if [ ! -d "$WORKSPACE/$dir" ]; then
@@ -178,7 +185,7 @@ echo ""
 echo -e "${BOLD}  Container (Incus)${NC}"
 echo -e "  ──────────────────────────────────────────────"
 
-CONTAINER="pai"
+CONTAINER="${CONTAINER_NAME:-pai}"
 
 # Check container exists
 if ! incus info "$CONTAINER" &>/dev/null 2>&1; then

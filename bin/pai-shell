@@ -1,40 +1,32 @@
 #!/bin/bash
 # pai-shell — Open a shell inside the PAI sandbox
-# Drops into a bash session as the 'claude' user.
+#
+# Usage:
+#   pai-shell                  # Shell into default instance
+#   pai-shell --name=v2        # Shell into named instance
 
 set -euo pipefail
 
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
+# Source shared instance configuration
+_PAI_LIB="$HOME/.local/lib/pai/common.sh"
+if [ -f "$_PAI_LIB" ]; then
+  source "$_PAI_LIB" "$@"
+  pai_require_container
+  pai_ensure_running || exit 1
+  echo -e "${GREEN}✓${NC} Sandbox ready."
+  exec pai_exec bash -l
+else
+  # Fallback without common.sh
+  CONTAINER_NAME="pai"
+  GREEN='\033[0;32m' RED='\033[0;31m' NC='\033[0m'
 
-CONTAINER="pai"
-
-# Check Incus is available
-if ! command -v incus &>/dev/null; then
-  echo -e "${RED}✗${NC} Incus not found. Run install.sh first."
-  exit 1
+  if ! command -v incus &>/dev/null; then
+    echo -e "${RED}✗${NC} Incus not found. Run install.sh first."
+    exit 1
+  fi
+  if ! incus info "$CONTAINER_NAME" &>/dev/null 2>&1; then
+    echo -e "${RED}✗${NC} Container '$CONTAINER_NAME' does not exist. Run install.sh first."
+    exit 1
+  fi
+  exec incus exec "$CONTAINER_NAME" --user 1000 --group 1000 --cwd /home/claude --env HOME=/home/claude -- bash -l
 fi
-
-# Check container exists
-if ! incus info "$CONTAINER" &>/dev/null 2>&1; then
-  echo -e "${RED}✗${NC} Container '$CONTAINER' does not exist. Run install.sh first."
-  exit 1
-fi
-
-# Start container if not running
-STATUS=$(incus info "$CONTAINER" 2>/dev/null | grep "^Status:" | awk '{print $2}')
-if [ "$STATUS" != "RUNNING" ]; then
-  echo -e "  Starting PAI sandbox..."
-  incus start "$CONTAINER"
-  for i in $(seq 1 30); do
-    if incus exec "$CONTAINER" -- systemctl is-system-running --wait &>/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  echo -e "${GREEN}✓${NC} Sandbox started."
-fi
-
-exec incus exec "$CONTAINER" --user 1000 --group 1000 --cwd /home/claude --env HOME=/home/claude -- bash -l

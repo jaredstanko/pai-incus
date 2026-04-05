@@ -1,37 +1,39 @@
 #!/bin/bash
 # pai-stop — Stop the PAI sandbox container
-# Gracefully stops the Incus container.
+#
+# Usage:
+#   pai-stop                   # Stop default instance
+#   pai-stop --name=v2         # Stop named instance
 
 set -euo pipefail
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+# Source shared instance configuration
+_PAI_LIB="$HOME/.local/lib/pai/common.sh"
+if [ -f "$_PAI_LIB" ]; then
+  source "$_PAI_LIB" "$@"
+else
+  CONTAINER_NAME="pai" INSTANCE_SUFFIX="" INSTANCE_NAME="pai"
+  GREEN='\033[0;32m' YELLOW='\033[1;33m' RED='\033[0;31m' NC='\033[0m'
+fi
 
-CONTAINER="pai"
-
-# Check Incus is available
+# Check prerequisites
 if ! command -v incus &>/dev/null; then
   echo -e "${RED}✗${NC} Incus not found. Run install.sh first."
   exit 1
 fi
 
-# Check container exists
-if ! incus info "$CONTAINER" &>/dev/null 2>&1; then
-  echo -e "${RED}✗${NC} Container '$CONTAINER' does not exist."
+STATUS=$(incus info "$CONTAINER_NAME" 2>/dev/null | grep "^Status:" | awk '{print $2}' || true)
+if [ -z "$STATUS" ]; then
+  echo -e "${RED}✗${NC} Container '$CONTAINER_NAME' does not exist."
   exit 1
 fi
 
-# Check if already stopped
-STATUS=$(incus info "$CONTAINER" 2>/dev/null | grep "^Status:" | awk '{print $2}')
 if [ "$STATUS" != "RUNNING" ]; then
-  echo -e "${YELLOW}⊘${NC} Container '$CONTAINER' is already stopped."
+  echo -e "${YELLOW}⊘${NC} Container '$CONTAINER_NAME' is already stopped."
   exit 0
 fi
 
-# Stop container (graceful shutdown via SIGRTMIN+3 to systemd)
-echo -e "  Stopping PAI sandbox..."
-incus stop "$CONTAINER" --timeout 30
+echo -e "  Stopping PAI sandbox${INSTANCE_SUFFIX:+ ($INSTANCE_NAME)}..."
+incus stop "$CONTAINER_NAME" --timeout 30
 
 echo -e "${GREEN}✓${NC} PAI sandbox stopped."

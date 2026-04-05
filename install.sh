@@ -7,8 +7,10 @@
 # This script is idempotent — safe to re-run if interrupted.
 #
 # Usage:
-#   ./install.sh              # Normal install (progress phases)
-#   ./install.sh --verbose    # Show full output from each step
+#   ./install.sh                        # Normal install (default "pai" instance)
+#   ./install.sh --verbose              # Show full output from each step
+#   ./install.sh --name=v2              # Parallel install as "pai-v2"
+#   ./install.sh --name=v2 --port=8082  # Parallel install with specific portal port
 #
 # Requirements:
 #   - Linux (Ubuntu 22.04+, Debian 12+, or Fedora 38+)
@@ -19,17 +21,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Source shared instance configuration (sets CONTAINER_NAME, WORKSPACE, PORTAL_PORT, etc.)
+# shellcheck source=scripts/common.sh
+source "$SCRIPT_DIR/scripts/common.sh" "$@"
+
 STEP=0
 TOTAL=8
 VERBOSE=false
-LOG_FILE="$HOME/.pai-install.log"
 HOST_USER="$(whoami)"
 HOST_UID="$(id -u)"
 
-# Parse flags
-for arg in "$@"; do
+# Parse additional flags (--name and --port already consumed by common.sh)
+for arg in ${_PAI_REMAINING_ARGS[@]+"${_PAI_REMAINING_ARGS[@]}"}; do
   case "$arg" in
     --verbose|-v) VERBOSE=true ;;
+    *) ;;
   esac
 done
 
@@ -93,11 +100,18 @@ source "$VERSIONS_FILE"
 echo ""
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
 echo -e "${BOLD}  Sandbox My AI — PAI Linux Installer${NC}"
+if [ -n "$INSTANCE_SUFFIX" ]; then
+  echo -e "${BOLD}  Instance: ${CYAN}${INSTANCE_NAME}${NC}"
+fi
 echo -e "${BOLD}${CYAN}═══════════════════════════════════════════════${NC}"
 echo ""
 echo "  This will set up a sandboxed AI workspace on your Linux machine."
 echo "  Isolation: Incus system container (unprivileged, AppArmor, seccomp)"
 echo "  Estimated time: 5-10 minutes (first run)."
+echo ""
+echo "  Container:   $CONTAINER_NAME"
+echo "  Workspace:   $WORKSPACE"
+echo "  Portal port: $PORTAL_PORT"
 echo ""
 echo "  Pinned versions (from versions.env):"
 echo "    Bun:         ${BUN_VERSION}"
@@ -217,33 +231,37 @@ fi
 
 step "Creating shared workspace directories..."
 
-WORKSPACE="$HOME/pai-workspace"
-DIRS=(claude-home data exchange portal work upstream)
-
-for dir in "${DIRS[@]}"; do
+for dir in "${PAI_WORKSPACE_DIRS[@]}"; do
   mkdir -p "$WORKSPACE/$dir"
 done
-ok "~/pai-workspace/ with ${#DIRS[@]} subdirectories"
+ok "$WORKSPACE/ with ${#PAI_WORKSPACE_DIRS[@]} subdirectories"
 
 # --- Step 4: Create Incus profile -----------------------------------------
 
 step "Configuring Incus profile..."
 
-# Generate profile from template with actual user paths
+# Generate profile from template with actual user paths and instance workspace
 PROFILE_TEMP=$(mktemp)
+PROFILE_NAME="$INSTANCE_NAME"
 sed \
   -e "s|USER_PLACEHOLDER|${HOST_USER}|g" \
   -e "s|HOST_UID_PLACEHOLDER|${HOST_UID}|g" \
+  -e "s|pai-workspace/|${WORKSPACE##*/}/|g" \
   "$SCRIPT_DIR/profiles/pai.yaml" > "$PROFILE_TEMP"
 
-if incus profile show pai &>/dev/null 2>&1; then
-  echo "        Updating existing 'pai' profile..."
-  incus profile edit pai < "$PROFILE_TEMP" >> "$LOG_FILE" 2>&1
-  skip "Profile 'pai' updated"
+# Update portal port if non-default
+if [ "$PORTAL_PORT" != "8080" ]; then
+  sed -i "s|listen: tcp:0.0.0.0:8080|listen: tcp:0.0.0.0:${PORTAL_PORT}|g" "$PROFILE_TEMP"
+fi
+
+if incus profile show "$PROFILE_NAME" &>/dev/null 2>&1; then
+  echo "        Updating existing '$PROFILE_NAME' profile..."
+  incus profile edit "$PROFILE_NAME" < "$PROFILE_TEMP" >> "$LOG_FILE" 2>&1
+  skip "Profile '$PROFILE_NAME' updated"
 else
-  incus profile create pai >> "$LOG_FILE" 2>&1
-  incus profile edit pai < "$PROFILE_TEMP" >> "$LOG_FILE" 2>&1
-  ok "Profile 'pai' created"
+  incus profile create "$PROFILE_NAME" >> "$LOG_FILE" 2>&1
+  incus profile edit "$PROFILE_NAME" < "$PROFILE_TEMP" >> "$LOG_FILE" 2>&1
+  ok "Profile '$PROFILE_NAME' created"
 fi
 
 rm -f "$PROFILE_TEMP"
@@ -252,25 +270,25 @@ rm -f "$PROFILE_TEMP"
 
 step "Creating sandbox container..."
 
-if incus info pai &>/dev/null 2>&1; then
-  skip "Container 'pai' already exists"
-  CONTAINER_STATUS=$(incus info pai 2>/dev/null | grep "^Status:" | awk '{print $2}')
+if incus info "$CONTAINER_NAME" &>/dev/null 2>&1; then
+  skip "Container '$CONTAINER_NAME' already exists"
+  CONTAINER_STATUS=$(incus info "$CONTAINER_NAME" 2>/dev/null | grep "^Status:" | awk '{print $2}')
   if [ "$CONTAINER_STATUS" != "RUNNING" ]; then
     echo "        Starting container..."
-    incus start pai
+    incus start "$CONTAINER_NAME"
     ok "Container started"
   else
     skip "Container already running"
   fi
 else
   echo "        Creating container from ${CONTAINER_IMAGE} (this takes 1-2 minutes)..."
-  incus launch "$CONTAINER_IMAGE" pai --profile default --profile pai >> "$LOG_FILE" 2>&1
-  ok "Container 'pai' created and started"
+  incus launch "$CONTAINER_IMAGE" "$CONTAINER_NAME" --profile default --profile "$PROFILE_NAME" >> "$LOG_FILE" 2>&1
+  ok "Container '$CONTAINER_NAME' created and started"
 
   # Wait for container to fully boot
   echo "        Waiting for container to boot..."
   for i in $(seq 1 30); do
-    if incus exec pai -- systemctl is-system-running --wait &>/dev/null 2>&1; then
+    if incus exec "$CONTAINER_NAME" -- systemctl is-system-running --wait &>/dev/null 2>&1; then
       break
     fi
     sleep 1
@@ -279,12 +297,12 @@ else
 fi
 
 # Ensure 'claude' user exists inside container
-if ! incus exec pai -- id claude &>/dev/null 2>&1; then
+if ! incus exec "$CONTAINER_NAME" -- id claude &>/dev/null 2>&1; then
   echo "        Creating 'claude' user in container..."
-  incus exec pai -- useradd -m -s /bin/bash -u 1000 claude >> "$LOG_FILE" 2>&1
-  incus exec pai -- usermod -aG sudo claude >> "$LOG_FILE" 2>&1
+  incus exec "$CONTAINER_NAME" -- useradd -m -s /bin/bash -u 1000 claude >> "$LOG_FILE" 2>&1
+  incus exec "$CONTAINER_NAME" -- usermod -aG sudo claude >> "$LOG_FILE" 2>&1
   # Allow passwordless sudo for provisioning
-  incus exec pai -- bash -c 'echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude' >> "$LOG_FILE" 2>&1
+  incus exec "$CONTAINER_NAME" -- bash -c 'echo "claude ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/claude' >> "$LOG_FILE" 2>&1
   ok "User 'claude' created (UID 1000)"
 else
   skip "User 'claude' already exists"
@@ -296,13 +314,13 @@ step "Provisioning sandbox (installs Claude Code, PAI, tools)..."
 echo "        This step takes 3-5 minutes on first run."
 
 # Push versions.env and provision script into container
-incus file push "$SCRIPT_DIR/versions.env" pai/home/claude/versions.env >> "$LOG_FILE" 2>&1
-incus file push "$SCRIPT_DIR/scripts/provision.sh" pai/home/claude/provision.sh >> "$LOG_FILE" 2>&1
+incus file push "$SCRIPT_DIR/versions.env" "${CONTAINER_NAME}/home/claude/versions.env" >> "$LOG_FILE" 2>&1
+incus file push "$SCRIPT_DIR/scripts/provision.sh" "${CONTAINER_NAME}/home/claude/provision.sh" >> "$LOG_FILE" 2>&1
 
 if [ "$VERBOSE" = true ]; then
-  incus exec pai --user 1000 --group 1000 --cwd /home/claude -- bash /home/claude/provision.sh
+  incus exec "$CONTAINER_NAME" --user 1000 --group 1000 --cwd /home/claude -- bash /home/claude/provision.sh
 else
-  incus exec pai --user 1000 --group 1000 --cwd /home/claude -- bash /home/claude/provision.sh 2>&1 | tee -a "$LOG_FILE"
+  incus exec "$CONTAINER_NAME" --user 1000 --group 1000 --cwd /home/claude -- bash /home/claude/provision.sh 2>&1 | tee -a "$LOG_FILE"
 fi
 ok "Sandbox provisioned"
 
@@ -311,7 +329,12 @@ ok "Sandbox provisioned"
 step "Installing CLI commands..."
 
 BIN_DIR="$HOME/.local/bin"
-mkdir -p "$BIN_DIR"
+LIB_DIR="$HOME/.local/lib/pai"
+mkdir -p "$BIN_DIR" "$LIB_DIR"
+
+# Install shared library
+cp "$SCRIPT_DIR/scripts/common.sh" "$LIB_DIR/common.sh"
+chmod +x "$LIB_DIR/common.sh"
 
 for cmd in pai-start pai-stop pai-status pai-talk pai-shell; do
   cp "$SCRIPT_DIR/bin/$cmd" "$BIN_DIR/$cmd"
@@ -370,7 +393,11 @@ echo -e "${BOLD}${GREEN}  Setup complete!${NC}"
 echo -e "${BOLD}${GREEN}═══════════════════════════════════════════════${NC}"
 echo ""
 echo "  Getting started:"
-echo "    1. Run ${BOLD}pai-talk${NC} to open a PAI session"
+if [ -n "$INSTANCE_SUFFIX" ]; then
+  echo "    1. Run ${BOLD}pai-talk --name=${_PAI_NAME}${NC} to open a PAI session"
+else
+  echo "    1. Run ${BOLD}pai-talk${NC} to open a PAI session"
+fi
 echo "    2. Run 'claude' inside and authenticate with your API key"
 echo "    3. Start building with AI"
 echo ""
@@ -382,5 +409,13 @@ echo -e "    ${BOLD}pai-talk${NC}        Open a PAI session (Claude Code)"
 echo -e "    ${BOLD}pai-shell${NC}       Open a plain shell in the sandbox"
 echo ""
 echo -e "  Install log: $LOG_FILE"
-echo -e "  Shared files: ~/pai-workspace/"
+echo -e "  Shared files: $WORKSPACE/"
+if [ -n "$INSTANCE_SUFFIX" ]; then
+  echo ""
+  echo "  All commands support --name=${_PAI_NAME} to target this instance:"
+  echo "    pai-talk --name=${_PAI_NAME}"
+  echo "    pai-status --name=${_PAI_NAME}"
+  echo "    ./scripts/upgrade.sh --name=${_PAI_NAME}"
+  echo "    ./scripts/uninstall.sh --name=${_PAI_NAME}"
+fi
 echo ""

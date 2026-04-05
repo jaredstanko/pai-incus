@@ -27,6 +27,15 @@ That's it. The installer:
 4. Installs CLI commands to `~/.local/bin/`
 5. Sets up shared directories at `~/pai-workspace/`
 
+### Install options
+
+```bash
+./install.sh                        # Normal install
+./install.sh --verbose              # Show detailed output
+./install.sh --name=v2              # Parallel install as a separate instance
+./install.sh --name=v2 --port=8082  # Parallel install with a specific portal port
+```
+
 ## CLI Commands
 
 | Command | Description |
@@ -38,6 +47,8 @@ That's it. The installer:
 | `pai-talk --resume` | Resume a previous session |
 | `pai-talk --claude` | Run plain Claude Code (no PAI) |
 | `pai-shell` | Open a shell inside the sandbox |
+
+All CLI commands accept `--name=X` to target a named instance (e.g., `pai-talk --name=v2`).
 
 ## Shared Directories
 
@@ -78,6 +89,88 @@ This is a real security boundary, not just process isolation.
 ## Version Pinning
 
 All dependencies are pinned in `versions.env`. Edit versions there, not in scripts. Run `./scripts/verify.sh` to check the full system state against the manifest.
+
+## Parallel Instances
+
+Use `--name` to run multiple instances side by side. Each gets its own container, workspace, and profile:
+
+```bash
+# Install a second instance for testing
+./install.sh --name=v2
+
+# Everything is isolated:
+#   Container: pai-v2
+#   Workspace: ~/pai-workspace-v2/
+#   Profile:   pai-v2
+#   Portal:    http://localhost:8081 (default for named instances)
+```
+
+All scripts accept `--name` to target a specific instance:
+
+```bash
+pai-talk --name=v2
+pai-status --name=v2
+./scripts/upgrade.sh --name=v2
+./scripts/uninstall.sh --name=v2
+./scripts/backup-restore.sh backup --name=v2
+```
+
+The default instance (no `--name`) is unaffected.
+
+## Upgrading
+
+```bash
+cd pai-linux
+git pull
+./scripts/upgrade.sh
+./scripts/upgrade.sh --name=v2   # Upgrade a named instance
+```
+
+What gets updated:
+- Container system packages
+- Shell environment (`.bashrc`/`.zshrc` PAI blocks)
+- Claude Code (migrates npm→native if needed)
+- CLI commands
+
+What is preserved:
+- All files in `~/pai-workspace/`
+- Claude Code authentication and sessions
+- PAI configuration (`~/.claude/` inside the container)
+
+## Backup & Restore
+
+```bash
+./scripts/backup-restore.sh backup              # Back up default instance
+./scripts/backup-restore.sh backup --name=v2    # Back up a named instance
+./scripts/backup-restore.sh restore             # Restore from a backup
+```
+
+Backup creates an Incus snapshot (atomic, fast) and copies your workspace directory. Restore lets you pick a snapshot and optionally restore the workspace.
+
+## Uninstall
+
+```bash
+./scripts/uninstall.sh              # Remove default instance
+./scripts/uninstall.sh --name=v2    # Remove a named instance
+```
+
+Removes the container, Incus profile, and CLI commands. Asks before touching workspace data. Does not remove Incus itself.
+
+## Troubleshooting
+
+**Install fails at "Creating sandbox container"** — Run `incus delete pai --force` and re-run `./install.sh`. For named instances, use `incus delete pai-NAME --force`.
+
+**Container won't start** — Check `incus info pai` for status. If it shows an error, try `incus delete pai --force` and re-run `./install.sh`.
+
+**No audio** — Ensure PipeWire or PulseAudio is running on the host. Check sockets: `ls /run/user/$(id -u)/pipewire-0 /run/user/$(id -u)/pulse/native`.
+
+**Shared folders not visible** — Run `mkdir -p ~/pai-workspace/{claude-home,data,exchange,portal,upstream,work}` and restart the container.
+
+**Permission denied on shared mounts** — Check that your host UID matches the container mapping: `incus config get pai raw.idmap`. Should show `both 1000 1000`.
+
+**Port conflict with named instance** — Use `--port=N` to pick a specific port: `./install.sh --name=v2 --port=8082`.
+
+**Group membership error** — After installing Incus, you may need to log out and back in (or run `newgrp incus-admin`) for group membership to take effect.
 
 ## Comparison with pai-lima (macOS)
 

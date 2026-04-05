@@ -1,42 +1,42 @@
 #!/bin/bash
 # pai-talk — Launch an interactive PAI session (Claude Code)
-# Opens Claude Code with PAI inside the Incus container.
 #
 # Usage:
-#   pai-talk              # New PAI session
-#   pai-talk --resume     # Resume a previous Claude Code session
-#   pai-talk --claude     # Run plain claude (no PAI launcher)
+#   pai-talk                   # New PAI session
+#   pai-talk --resume          # Resume a previous Claude Code session
+#   pai-talk --claude          # Run plain claude (no PAI launcher)
+#   pai-talk --name=v2         # Target a named instance
 
 set -euo pipefail
 
-BOLD='\033[1m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+# Source shared instance configuration
+_PAI_LIB="$HOME/.local/lib/pai/common.sh"
+if [ -f "$_PAI_LIB" ]; then
+  source "$_PAI_LIB" "$@"
+else
+  CONTAINER_NAME="pai" PORTAL_PORT="8080" INSTANCE_SUFFIX="" INSTANCE_NAME="pai" _PAI_NAME=""
+  _PAI_REMAINING_ARGS=("$@")
+  BOLD='\033[1m' GREEN='\033[0;32m' RED='\033[0;31m' NC='\033[0m'
+fi
 
-CONTAINER="pai"
-
-# Check Incus is available
+# Check prerequisites
 if ! command -v incus &>/dev/null; then
   echo -e "${RED}✗${NC} Incus not found. Run install.sh first."
   exit 1
 fi
 
-# Check container exists
-if ! incus info "$CONTAINER" &>/dev/null 2>&1; then
-  echo -e "${RED}✗${NC} Container '$CONTAINER' does not exist. Run install.sh first."
+# Ensure container is running
+STATUS=$(incus info "$CONTAINER_NAME" 2>/dev/null | grep "^Status:" | awk '{print $2}' || true)
+if [ -z "$STATUS" ]; then
+  echo -e "${RED}✗${NC} Container '$CONTAINER_NAME' does not exist. Run install.sh first."
   exit 1
 fi
 
-# Start container if not running
-STATUS=$(incus info "$CONTAINER" 2>/dev/null | grep "^Status:" | awk '{print $2}')
 if [ "$STATUS" != "RUNNING" ]; then
   echo -e "  Starting PAI sandbox..."
-  incus start "$CONTAINER"
-  # Wait for boot
-  for i in $(seq 1 30); do
-    if incus exec "$CONTAINER" -- systemctl is-system-running --wait &>/dev/null 2>&1; then
+  incus start "$CONTAINER_NAME"
+  for _i in $(seq 1 30); do
+    if incus exec "$CONTAINER_NAME" -- systemctl is-system-running --wait &>/dev/null 2>&1; then
       break
     fi
     sleep 1
@@ -44,19 +44,38 @@ if [ "$STATUS" != "RUNNING" ]; then
   echo -e "${GREEN}✓${NC} Sandbox started."
 fi
 
-case "${1:-}" in
-  --resume|-r)
+# Parse action from remaining args
+ACTION=""
+for arg in ${_PAI_REMAINING_ARGS[@]+"${_PAI_REMAINING_ARGS[@]}"}; do
+  case "$arg" in
+    --resume|-r) ACTION="resume" ;;
+    --claude|-c) ACTION="claude" ;;
+    *) ;;
+  esac
+done
+
+# Helper for exec into container (use pai_exec if available)
+_exec_cmd() {
+  if type pai_exec &>/dev/null; then
+    exec pai_exec "$@"
+  else
+    exec incus exec "$CONTAINER_NAME" --user 1000 --group 1000 --cwd /home/claude --env HOME=/home/claude -- "$@"
+  fi
+}
+
+case "$ACTION" in
+  resume)
     echo -e "  Opening session picker..."
-    exec incus exec "$CONTAINER" --user 1000 --group 1000 --cwd /home/claude --env HOME=/home/claude -- bash -lc "claude -r"
+    _exec_cmd bash -lc "claude -r"
     ;;
-  --claude|-c)
+  claude)
     echo -e "  Launching Claude Code..."
-    exec incus exec "$CONTAINER" --user 1000 --group 1000 --cwd /home/claude --env HOME=/home/claude -- bash -lc "claude"
+    _exec_cmd bash -lc "claude"
     ;;
   *)
     echo -e "  Launching PAI..."
-    echo -e "  Portal: ${BOLD}http://localhost:8080${NC}"
+    echo -e "  Portal: ${BOLD}http://localhost:${PORTAL_PORT}${NC}"
     echo ""
-    exec incus exec "$CONTAINER" --user 1000 --group 1000 --cwd /home/claude --env HOME=/home/claude -- bash -lc "bun ~/.claude/PAI/Tools/pai.ts"
+    _exec_cmd bash -lc "bun ~/.claude/PAI/Tools/pai.ts"
     ;;
 esac
