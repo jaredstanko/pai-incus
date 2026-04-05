@@ -219,6 +219,28 @@ if ! groups "$HOST_USER" | grep -qw incus-admin; then
   fi
 fi
 
+# Ensure host UID is in root's subuid/subgid range (required for raw.idmap)
+# Incus runs as root and needs permission to map the host user's UID into containers.
+if ! grep -q "^root:.*" /etc/subuid 2>/dev/null || \
+   ! awk -F: -v uid="$HOST_UID" '$1=="root" { split($0,a,":"); for(i=2;i<=NF;i+=2) { start=a[i]; count=a[i+1]; if(uid>=start && uid<start+count) found=1 } } END { exit !found }' /etc/subuid 2>/dev/null; then
+  # Simple check: see if host UID falls in root's ranges
+  NEEDS_SUBUID=true
+  while IFS=: read -r user start count; do
+    if [ "$user" = "root" ] && [ "$HOST_UID" -ge "$start" ] && [ "$HOST_UID" -lt $((start + count)) ]; then
+      NEEDS_SUBUID=false
+      break
+    fi
+  done < /etc/subuid
+
+  if [ "$NEEDS_SUBUID" = true ]; then
+    echo "        Adding UID $HOST_UID to root's subordinate ID range..."
+    sudo sh -c "echo 'root:${HOST_UID}:1' >> /etc/subuid"
+    sudo sh -c "echo 'root:${HOST_UID}:1' >> /etc/subgid"
+    sudo systemctl restart incus >> "$LOG_FILE" 2>&1 || true
+    ok "Added UID $HOST_UID to root's subuid/subgid"
+  fi
+fi
+
 # Initialize Incus if not already done
 if ! incus storage list 2>/dev/null | grep -q "default"; then
   echo "        Initializing Incus with defaults..."
