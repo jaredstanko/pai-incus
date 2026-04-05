@@ -142,6 +142,21 @@ if [ "$HOST_UID" -eq 0 ]; then
 fi
 ok "Running as user: $HOST_USER (UID $HOST_UID)"
 
+# Install git and curl if missing (Fedora minimal and some server installs lack these)
+MISSING_PKGS=""
+command -v git &>/dev/null || MISSING_PKGS="git"
+command -v curl &>/dev/null || MISSING_PKGS="$MISSING_PKGS curl"
+if [ -n "$MISSING_PKGS" ]; then
+  echo "        Installing missing prerequisites:$MISSING_PKGS"
+  if command -v dnf &>/dev/null; then
+    sudo dnf install -y $MISSING_PKGS >> "$LOG_FILE" 2>&1
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get update -qq >> "$LOG_FILE" 2>&1
+    sudo apt-get install -y -qq $MISSING_PKGS >> "$LOG_FILE" 2>&1
+  fi
+  ok "Prerequisites installed"
+fi
+
 # --- Step 2: Install Incus ------------------------------------------------
 
 step "Installing Incus..."

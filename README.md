@@ -37,23 +37,22 @@ graph TB
 
 ### Step 1: Install
 
-Open your terminal and run these three commands:
+Open your terminal and paste this:
 
 ```bash
+command -v git >/dev/null || { sudo dnf install -y git-core 2>/dev/null || sudo apt-get install -y git 2>/dev/null; }
 git clone https://github.com/jaredstanko/pai-linux.git
 cd pai-linux
 ./install.sh
 ```
 
-> **Don't have git?** On Fedora run `sudo dnf install git-core` first. On Ubuntu/Debian run `sudo apt install git` first.
-
-The installer will download and set up everything automatically. You'll see a lot of output scrolling by -- **ignore it all** until you see the final instructions.
+The first line installs `git` if you don't have it yet. The installer handles everything else automatically. You'll see a lot of output scrolling by -- **ignore it all** until you see the final instructions.
 
 > **"Group membership" message?** If the installer says to log out and back in, do that, then come back to the `pai-linux` folder and run `./install.sh` again. It will pick up where it left off.
 
 ### Step 2: Open a PAI Session
 
-Open a **new terminal window** (important -- the new commands won't work in the same terminal you installed from), then run:
+Open a **new terminal window** (or run `source ~/.bashrc` in the current one), then run:
 
 ```bash
 pai-talk
@@ -129,7 +128,7 @@ Your data stays on your machine. You can destroy and recreate the sandbox withou
 
 **Install fails partway through** -- Just run `./install.sh` again. It's safe to re-run and will pick up where it left off.
 
-**"pai-talk" not found** -- Open a new terminal window, or run `source ~/.bashrc` first.
+**"pai-talk" not found** -- Open a new terminal window, or run `source ~/.bashrc` in the current one.
 
 **"Group membership" error** -- Log out of your computer and log back in, then run `./install.sh` again.
 
